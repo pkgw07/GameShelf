@@ -76,7 +76,7 @@ export function Deals() {
       <TopBar title="할인 · 위시리스트" />
       <PageBody className="space-y-4">
         <div className="flex flex-wrap items-center gap-4">
-          <Segmented
+          <Segmented<'wish' | 'owned'>
             value={tab}
             onChange={setTab}
             options={[

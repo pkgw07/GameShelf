@@ -181,7 +181,7 @@ function Inspection({ info }: { info: PriceInspection }) {
       <div className="mt-5">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-[15px] font-semibold">가격 변동 이력</h3>
-          <Segmented
+          <Segmented<'kr' | 'us'>
             size="sm"
             value={region}
             onChange={setRegion}

@@ -249,7 +249,7 @@ export function Settings() {
         <Panel title="화면">
           <div className="flex items-center justify-between">
             <span className="text-sm text-ink">테마</span>
-            <Segmented
+            <Segmented<S['theme']>
               value={settings.theme}
               onChange={(v) => void save({ theme: v })}
               options={[

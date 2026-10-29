@@ -72,7 +72,7 @@ export function Money() {
           <Panel
             title="지출 추이"
             action={
-              <Segmented
+              <Segmented<'year' | 'month'>
                 size="sm"
                 value={unit}
                 onChange={setUnit}
