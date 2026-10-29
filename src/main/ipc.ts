@@ -2,7 +2,7 @@
 import { closeSync, copyFileSync, existsSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, basename } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
-import { IPC, type ApiMethod, type SteamShelfApi } from '@shared/api'
+import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
 import { APP_VERSION, type BackupResult, type Settings } from '@shared/types'
 import type { Core } from './core'
 import type { Updater } from './updater'
@@ -10,7 +10,7 @@ import { getPlayerSummary, resolveSteamId, storeSearch, toProfile } from './prov
 import { importLicenses, importPurchases } from './services/imports'
 import { libraryCsv } from './services/exporter'
 
-type Handlers = { [K in ApiMethod]: (...args: Parameters<SteamShelfApi[K]>) => ReturnType<SteamShelfApi[K]> | Awaited<ReturnType<SteamShelfApi[K]>> }
+type Handlers = { [K in ApiMethod]: (...args: Parameters<GameShelfApi[K]>) => ReturnType<GameShelfApi[K]> | Awaited<ReturnType<GameShelfApi[K]>> }
 
 export interface IpcHooks {
   onSettingsChanged(prev: Settings, next: Settings): void
@@ -30,7 +30,7 @@ function isSqliteFile(path: string): boolean {
 
 export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void {
   const { repo, settings, sync, insights } = core
-  let cachedProfile: Awaited<ReturnType<SteamShelfApi['getProfile']>> = null
+  let cachedProfile: Awaited<ReturnType<GameShelfApi['getProfile']>> = null
 
   const h: Handlers = {
     getAppInfo: () => ({ version: APP_VERSION, dataPath: dirname(core.dbPath), dbDriver: core.db.driver, platform: process.platform }),
@@ -121,8 +121,8 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const stamp = new Date().toISOString().slice(0, 10)
       const opts = {
         title: '백업 파일 저장',
-        defaultPath: `SteamShelf-백업-${stamp}.db`,
-        filters: [{ name: 'SteamShelf 백업', extensions: ['db'] }]
+        defaultPath: `GameShelf-백업-${stamp}.db`,
+        filters: [{ name: 'GameShelf 백업', extensions: ['db'] }]
       }
       const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
       if (r.canceled || !r.filePath) return { ok: false, path: null, message: '취소했습니다.' }
@@ -140,13 +140,13 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const win = hooks.getWindow()
       const opts = {
         title: '백업 파일 불러오기',
-        filters: [{ name: 'SteamShelf 백업', extensions: ['db'] }],
+        filters: [{ name: 'GameShelf 백업', extensions: ['db'] }],
         properties: ['openFile' as const]
       }
       const r = win ? await dialog.showOpenDialog(win, opts) : await dialog.showOpenDialog(opts)
       const file = r.filePaths?.[0]
       if (r.canceled || !file) return { ok: false, path: null, message: '취소했습니다.' }
-      if (!isSqliteFile(file)) return { ok: false, path: null, message: 'SteamShelf 백업 파일이 아닙니다.' }
+      if (!isSqliteFile(file)) return { ok: false, path: null, message: 'GameShelf 백업 파일이 아닙니다.' }
       // 현재 데이터는 안전하게 한 번 더 남겨 둔다
       const safety = core.dbPath.replace(/\.db$/, `.before-restore-${Date.now()}.db`)
       core.db.exec(`VACUUM INTO '${safety.replace(/'/g, "''")}'`)
@@ -170,7 +170,7 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const stamp = new Date().toISOString().slice(0, 10)
       const opts = {
         title: 'CSV로 내보내기',
-        defaultPath: `SteamShelf-라이브러리-${stamp}.csv`,
+        defaultPath: `GameShelf-라이브러리-${stamp}.csv`,
         filters: [{ name: 'CSV', extensions: ['csv'] }]
       }
       const r = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)

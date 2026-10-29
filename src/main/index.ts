@@ -28,7 +28,7 @@ const selfTest = process.argv.includes('--selftest')
 async function runSelfTest(): Promise<void> {
   const out = join(process.cwd(), 'selftest-result.json')
   try {
-    const dir = mkdtempSync(join(tmpdir(), 'steamshelf-'))
+    const dir = mkdtempSync(join(tmpdir(), 'gameshelf-'))
     const c = new Core(join(dir, 'test.db'), plainCodec, { syncState: () => {}, nowPlaying: () => {}, dataChanged: () => {} })
     c.settings.save({ unplayedMinutes: 45 })
     c.repo.upsertOwnedGames('steam', [{ gameId: '620', name: 'Portal 2', playtimeMin: 100, playtime2wMin: 0, lastPlayed: null, hasStats: true }])
@@ -65,7 +65,7 @@ function createWindow(show: boolean): void {
     minWidth: 1024,
     minHeight: 680,
     show: false,
-    title: 'SteamShelf',
+    title: 'GameShelf',
     icon,
     autoHideMenuBar: true,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#0f1115' : '#f6f7f9',
@@ -113,12 +113,12 @@ function updateTray(): void {
   if (!tray) return
   const s = core?.sync.getState()
   const playing = nowPlaying ? `플레이 중: ${nowPlaying.name}` : '플레이 중인 게임 없음'
-  tray.setToolTip(nowPlaying ? `SteamShelf · ${nowPlaying.name} 플레이 중` : 'SteamShelf')
+  tray.setToolTip(nowPlaying ? `GameShelf · ${nowPlaying.name} 플레이 중` : 'GameShelf')
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: playing, enabled: false },
       { type: 'separator' },
-      { label: 'SteamShelf 열기', click: showWindow },
+      { label: 'GameShelf 열기', click: showWindow },
       {
         label: s?.running ? '동기화 중…' : '지금 동기화',
         enabled: !s?.running,
@@ -180,8 +180,8 @@ if (selfTest) {
   app.on('second-instance', showWindow)
 
   app.whenReady().then(() => {
-    app.setAppUserModelId('com.pkgw07.steamshelf')
-    const dbPath = join(app.getPath('userData'), 'steamshelf.db')
+    app.setAppUserModelId('com.pkgw07.gameshelf')
+    const dbPath = join(app.getPath('userData'), 'gameshelf.db')
     core = new Core(dbPath, codec, {
       syncState: (s) => {
         send(IPC.syncState, s)

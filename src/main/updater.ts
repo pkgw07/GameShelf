@@ -1,4 +1,4 @@
-// 자동 업데이트: GitHub Releases(pkgw07/SteamShelf)에 올라온 새 버전을 확인한다.
+// 자동 업데이트: GitHub Releases(pkgw07/GameShelf)에 올라온 새 버전을 확인한다.
 // 설치된 프로그램에서만 동작하고, 개발 모드(npm run dev)에서는 꺼진다.
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'

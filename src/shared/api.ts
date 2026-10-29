@@ -23,7 +23,7 @@ import type {
 } from './types'
 
 /** 화면에서 window.api 로 호출하는 기능 목록 */
-export interface SteamShelfApi {
+export interface GameShelfApi {
   getAppInfo(): Promise<AppInfo>
   getSettings(): Promise<Settings>
   saveSettings(patch: Partial<Settings>): Promise<Settings>
@@ -85,4 +85,4 @@ export const IPC = {
 } as const
 
 /** invoke 로 전달 가능한 메서드 이름 (이벤트 구독 제외) */
-export type ApiMethod = Exclude<keyof SteamShelfApi, 'onSyncState' | 'onNowPlaying' | 'onDataChanged' | 'onUpdateState'>
+export type ApiMethod = Exclude<keyof GameShelfApi, 'onSyncState' | 'onNowPlaying' | 'onDataChanged' | 'onUpdateState'>

@@ -1,5 +1,5 @@
-appId: com.pkgw07.steamshelf
-productName: SteamShelf
+appId: com.pkgw07.gameshelf
+productName: GameShelf
 directories:
   buildResources: resources
   output: dist
@@ -15,12 +15,12 @@ win:
     - target: nsis
       arch: [x64]
   icon: resources/icon.png
-  artifactName: SteamShelf-Setup-${version}.${ext}
+  artifactName: GameShelf-Setup-${version}.${ext}
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: SteamShelf
+  shortcutName: GameShelf
 mac:
   target: dmg
   icon: resources/icon.png
@@ -28,5 +28,5 @@ npmRebuild: true
 publish:
   provider: github
   owner: pkgw07
-  repo: SteamShelf
+  repo: GameShelf
   releaseType: release

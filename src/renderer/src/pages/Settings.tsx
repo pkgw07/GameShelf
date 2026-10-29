@@ -306,7 +306,7 @@ export function Settings() {
             <dt className="text-muted">마지막 동기화</dt>
             <dd className="text-ink">{sync?.lastFinishedAt ? `${new Date(sync.lastFinishedAt).toLocaleString('ko-KR')} (${relative(sync.lastFinishedAt)})` : '아직 없음'}</dd>
             <dt className="text-muted">버전</dt>
-            <dd className="text-ink">SteamShelf {info?.version}</dd>
+            <dd className="text-ink">GameShelf {info?.version}</dd>
             <dt className="text-muted">저장 위치</dt>
             <dd className="truncate text-ink">{info?.dataPath}</dd>
             <dt className="text-muted">DB 드라이버</dt>
@@ -370,7 +370,7 @@ export function Settings() {
             <li>평균 엔딩 시간: HowLongToBeat (비공식 조회, 실패하면 직접 입력)</li>
             <li>추천 후보: SteamSpy</li>
           </ul>
-          <p className="mt-2 text-[12px] text-faint">SteamShelf는 Valve, IsThereAnyDeal, HowLongToBeat와 관계없는 개인용 프로그램입니다.</p>
+          <p className="mt-2 text-[12px] text-faint">GameShelf는 Valve, IsThereAnyDeal, HowLongToBeat와 관계없는 개인용 프로그램입니다.</p>
         </Panel>
       </PageBody>
     </>

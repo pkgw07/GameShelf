@@ -1,10 +1,10 @@
-# SteamShelf (게임 장부) v1.0.0
+# GameShelf (게임 장부) v1.0.0
 
 Steam 라이브러리를 불러와서 게임 수, 가격(정가·현재가·역대 최저가·실제 지출), 플레이타임, 도전과제, 장르 취향 추천, 엔딩까지 남은 시간을 보여 주는 Windows 데스크톱 프로그램입니다.
 
 ## 설치하기
 
-1. [Releases 페이지](https://github.com/pkgw07/SteamShelf/releases/latest)에서 `SteamShelf-Setup-버전.exe`를 받아 실행합니다.
+1. [Releases 페이지](https://github.com/pkgw07/GameShelf/releases/latest)에서 `GameShelf-Setup-버전.exe`를 받아 실행합니다.
 2. Windows가 "PC 보호" 창을 띄우면 **추가 정보 → 실행**을 누릅니다. 코드 서명 인증서가 없는 개인 프로그램이라 처음 한 번 뜨는 경고입니다.
 3. 프로그램이 열리면 **설정**에서
    - Steam Web API 키 입력 ([발급 페이지](https://steamcommunity.com/dev/apikey), 도메인 칸에는 `localhost` 같은 아무 이름)
@@ -53,7 +53,7 @@ Steam API로는 구매 가격을 알 수 없어서 두 가지 방법을 지원�
 직접 입력한 값은 가져오기가 덮어쓰지 않습니다.
 
 ## 데이터와 개인정보
-- 모든 데이터는 이 컴퓨터의 `%APPDATA%\SteamShelf\steamshelf.db` 에만 저장됩니다.
+- 모든 데이터는 이 컴퓨터의 `%APPDATA%\GameShelf\gameshelf.db` 에만 저장됩니다.
 - API 키는 Windows 보안 저장소(DPAPI)로 암호화해서 저장합니다.
 - Steam 로그인 정보는 입력받지 않습니다.
 

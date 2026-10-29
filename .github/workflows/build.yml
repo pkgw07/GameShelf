@@ -54,7 +54,7 @@ jobs:
         if: ${{ env.PUBLISH != 'true' }}
         uses: actions/upload-artifact@v5
         with:
-          name: SteamShelf-Setup
+          name: GameShelf-Setup
           path: dist/*.exe
           retention-days: 14
 

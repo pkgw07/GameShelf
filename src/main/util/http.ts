@@ -74,7 +74,7 @@ export async function request<T = unknown>(url: string, opts: RequestOpts = {}):
         return await fetchImpl(url, {
           method: opts.method ?? 'GET',
           headers: {
-            'User-Agent': 'SteamShelf/1.0 (+desktop app)',
+            'User-Agent': 'GameShelf/1.0 (+desktop app)',
             ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
             ...opts.headers
           },

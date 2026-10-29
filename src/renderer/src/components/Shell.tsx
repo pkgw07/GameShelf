@@ -3,7 +3,6 @@ import {
   LuChartColumn,
   LuDownload,
   LuCompass,
-  LuGamepad2,
   LuLayoutDashboard,
   LuLibrary,
   LuMoon,
@@ -16,6 +15,7 @@ import {
   LuX
 } from 'react-icons/lu'
 import { APP_VERSION } from '@shared/types'
+import logo from '@/assets/logo.png'
 import { cn } from '@/lib/cn'
 import { duration, relative } from '@/lib/format'
 import { useStore, type Page } from '@/lib/store'
@@ -35,11 +35,9 @@ export function Sidebar() {
   return (
     <aside className="flex w-[220px] shrink-0 flex-col border-r border-line bg-surface">
       <div className="flex items-center gap-2.5 px-5 pt-5 pb-6">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-brand-ink">
-          <LuGamepad2 className="h-[18px] w-[18px]" />
-        </div>
+        <img src={logo} alt="" className="h-9 w-9" />
         <div>
-          <div className="text-[15px] leading-tight font-bold text-ink">SteamShelf</div>
+          <div className="text-[15px] leading-tight font-bold text-ink">GameShelf</div>
           <div className="text-[11px] leading-tight text-faint">게임 장부 · v{APP_VERSION}</div>
         </div>
       </div>

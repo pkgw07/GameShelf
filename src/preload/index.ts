@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { IPC, type ApiMethod, type SteamShelfApi } from '@shared/api'
+import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
 
 const call =
   (method: ApiMethod) =>
@@ -53,7 +53,7 @@ function listen<T>(channel: string, cb: (v: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, fn)
 }
 
-const api = Object.fromEntries(methods.map((m) => [m, call(m)])) as unknown as SteamShelfApi
+const api = Object.fromEntries(methods.map((m) => [m, call(m)])) as unknown as GameShelfApi
 api.onSyncState = (cb) => listen(IPC.syncState, cb)
 api.onNowPlaying = (cb) => listen(IPC.nowPlaying, cb)
 api.onDataChanged = (cb) => listen(IPC.dataChanged, () => cb())
