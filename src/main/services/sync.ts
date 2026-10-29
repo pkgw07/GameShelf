@@ -5,7 +5,17 @@ import type { Settings, SyncState } from '@shared/types'
 import type { Repo } from '../db/repo'
 import { keyOf } from '../db/repo'
 import { providers } from '../providers'
-import { getAchievements, getAppDetails, getGlobalAchievementPct, getOwnedGames, getPricesBatch, getStoreItems, getWishlist } from '../providers/steam'
+import {
+  getAchievements,
+  getAppDetails,
+  getDlcForApps,
+  getDlcForOwnedGames,
+  getGlobalAchievementPct,
+  getOwnedGames,
+  getPricesBatch,
+  getStoreItems,
+  getWishlist
+} from '../providers/steam'
 import { chunk, mapLimit } from '../util/http'
 import { recordDate } from '../util/time'
 import { applyAutoStatus } from './autostatus'
@@ -134,6 +144,47 @@ export class SyncService {
         if (i % 20 === 0) this.dataChanged()
       }
       this.dataChanged()
+
+      // 4-1) DLC 목록 (보유 게임 전체를 한 번에). 실패하면 아직 확인 안 한 게임만 상세 정보를 다시 받는다
+      const unchecked = this.repo.ownedGamesUncheckedDlc()
+      if (kind === 'full' || unchecked.length) {
+        this.progress('dlc', 'DLC 목록 확인 중')
+        let lists = new Map<number, number[]>()
+        try {
+          lists = await getDlcForOwnedGames(s.steamApiKey, s.steamId, owned, signal)
+        } catch (e) {
+          if (signal.aborted) throw e
+        }
+        if (!lists.size && unchecked.length) {
+          try {
+            lists = await getDlcForApps(s.steamApiKey, unchecked, signal)
+          } catch (e) {
+            if (signal.aborted) throw e
+          }
+        }
+        if (lists.size) {
+          this.repo.db.tx(() => {
+            for (const appid of owned) this.repo.setDlcList(appid, lists.get(appid) ?? [])
+          })
+        } else if (unchecked.length) {
+          // 마지막 방법: 게임 상세 정보를 다시 받아 DLC 목록을 채운다 (상점 요청 제한 때문에 느림)
+          let k = 0
+          for (const appid of unchecked) {
+            if (signal.aborted) throw new Error('취소됨')
+            this.progress('dlc', 'DLC 목록 확인 중 (게임별)', ++k, unchecked.length)
+            try {
+              const { app, priceKr } = await getAppDetails(appid, signal)
+              this.repo.upsertSteamApp(app)
+              if (app.status === 'ok') this.repo.savePrice(appid, 'kr', priceKr)
+              else this.repo.setDlcList(appid, [])
+            } catch (e) {
+              warn(`DLC 목록(${appid})`, e)
+              if (warnings.length > 30) break
+            }
+          }
+        }
+        this.dataChanged()
+      }
 
       // 4-2) DLC 이름과 Steam 평가 (200개씩 한 번에)
       const dlcPairs = this.repo.ownedGamesDlc()

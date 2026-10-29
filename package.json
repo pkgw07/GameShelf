@@ -1,7 +1,7 @@
 {
   "name": "gameshelf",
   "productName": "GameShelf",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "스팀 게임 라이브러리 분석 프로그램 (가격, 플레이타임, 도전과제, 추천)",
   "main": "./out/main/index.js",
   "author": "pkgw07",

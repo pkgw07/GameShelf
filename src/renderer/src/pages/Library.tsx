@@ -10,7 +10,7 @@ import { cn } from '@/lib/cn'
 import { hours, hoursFromH, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
-type Filter = 'all' | 'played' | 'unplayed' | 'sale' | 'excluded'
+type Filter = 'all' | 'played' | 'unplayed' | 'sale' | 'excluded' | 'dlc'
 type Sort = 'name' | 'playtime' | 'recent' | 'regular' | 'discount' | 'purchase' | 'cph' | 'remaining' | 'ach' | 'added' | 'review'
 
 const SORTS: { value: Sort; label: string }[] = [
@@ -63,7 +63,7 @@ function sortFn(sort: Sort): (a: GameRow, b: GameRow) => number {
 }
 
 export function Library() {
-  const { games, settings, saveSettings, excludeOf, openGame, toast, reload } = useStore()
+  const { games, dlcs, settings, saveSettings, excludeOf, openGame, toast, reload } = useStore()
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [status, setStatus] = useState<GameStatus | 'any'>('any')
@@ -139,7 +139,8 @@ export function Library() {
               { value: 'played', label: '플레이함', count: counts.played },
               { value: 'unplayed', label: '안 한 게임', count: counts.unplayed },
               { value: 'sale', label: '할인 중', count: counts.sale },
-              { value: 'excluded', label: '제외됨', count: counts.excluded }
+              { value: 'excluded', label: '제외됨', count: counts.excluded },
+              { value: 'dlc', label: 'DLC', count: dlcs.length }
             ]}
           />
           <div className="flex-1" />
@@ -152,6 +153,7 @@ export function Library() {
             ]}
           />
         </div>
+        {filter !== 'dlc' && (
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
           <Select value={status} onChange={(e) => setStatus(e.target.value as GameStatus | 'any')}>
             <option value="any">모든 상태</option>
@@ -193,6 +195,7 @@ export function Library() {
           </label>
           <span className="ml-auto text-faint">{list.length}개</span>
         </div>
+        )}
 
         {selected.size > 0 && (
           <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 rounded-xl border border-line bg-surface px-4 py-2.5 shadow-[var(--shadow)]">
@@ -221,7 +224,9 @@ export function Library() {
           </div>
         )}
 
-        {!list.length ? (
+        {filter === 'dlc' ? (
+          <DlcTable q={q} onOpenGame={openGame} />
+        ) : !list.length ? (
           <Empty title="조건에 맞는 게임이 없습니다">검색어나 필터를 바꿔 보세요.</Empty>
         ) : view === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
@@ -336,12 +341,108 @@ export function Library() {
             </table>
           </div>
         )}
-        {list.length > limit && (
+        {filter !== 'dlc' && list.length > limit && (
           <div className="flex justify-center">
             <Button onClick={() => setLimit((l) => l + PAGE)}>더 보기 ({list.length - limit}개 남음)</Button>
           </div>
         )}
       </PageBody>
     </>
+  )
+}
+
+function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void }) {
+  const { dlcs, reload, toast } = useStore()
+  const [ownedOnly, setOwnedOnly] = useState(false)
+  const [limit, setLimit] = useState(PAGE)
+  const needle = q.trim().toLowerCase()
+  const rows = useMemo(
+    () =>
+      dlcs
+        .filter((d) => (!ownedOnly || d.owned) && (!needle || d.name.toLowerCase().includes(needle) || d.parentName.toLowerCase().includes(needle)))
+        .sort((a, b) => Number(b.owned) - Number(a.owned) || a.parentName.localeCompare(b.parentName, 'ko') || a.name.localeCompare(b.name, 'ko')),
+    [dlcs, ownedOnly, needle]
+  )
+  const owned = dlcs.filter((d) => d.owned)
+  const toggle = async (appid: number, v: boolean) => {
+    try {
+      await window.api.setDlcOwned(appid, v)
+      await reload()
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+  if (!dlcs.length) {
+    return (
+      <Empty title="DLC 목록이 아직 없습니다" action={<Button onClick={() => void window.api.startSync()}>지금 동기화</Button>}>
+        동기화하면 보유 게임의 DLC 목록을 받아 옵니다. 업데이트 직후라면 한 번 동기화해 주세요.
+      </Empty>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-4 text-[13px] text-muted">
+        <span>
+          보유 표시 <b className="text-ink">{owned.length}</b> / 전체 {dlcs.length}개 · 보유 DLC 정가 합계{' '}
+          <b className="num text-ink">{won(owned.reduce((a, d) => a + (d.priceKr?.initial ?? 0), 0))}</b>
+        </span>
+        <label className="ml-auto inline-flex items-center gap-2">
+          <input type="checkbox" className="accent-[var(--brand)]" checked={ownedOnly} onChange={(e) => setOwnedOnly(e.target.checked)} />
+          보유한 DLC만
+        </label>
+      </div>
+      <p className="text-[12px] text-faint">
+        Steam API로는 DLC 보유 여부를 알 수 없습니다. 가격·지출 화면에서 구매 내역이나 라이선스를 가져오면 자동으로 체크되고, 여기서 직접 체크할 수도 있습니다.
+      </p>
+      <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-line text-left text-[12px] text-muted">
+              <th className="w-14 px-3 py-2.5 font-medium">보유</th>
+              <th className="px-2 py-2.5 font-medium">DLC</th>
+              <th className="px-2 py-2.5 font-medium">게임</th>
+              <th className="px-2 py-2.5 text-right font-medium">현재가</th>
+              <th className="px-2 py-2.5 text-right font-medium">역대 최저 (최대 할인)</th>
+              <th className="px-2 py-2.5 text-right font-medium">평가</th>
+              <th className="px-3 py-2.5 text-right font-medium">구매가</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, limit).map((d) => (
+              <tr key={d.appid} className={cn('border-b border-line last:border-b-0', !d.owned && 'text-muted')}>
+                <td className="px-3 py-2">
+                  <input type="checkbox" aria-label="보유" className="h-4 w-4 accent-[var(--brand)]" checked={d.owned} onChange={(e) => void toggle(d.appid, e.target.checked)} />
+                </td>
+                <td className="max-w-[320px] px-2 py-2">
+                  <button
+                    type="button"
+                    className={cn('block max-w-full truncate text-left hover:underline', d.owned ? 'font-medium text-ink' : '')}
+                    onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${d.appid}/`)}
+                  >
+                    {d.name}
+                  </button>
+                </td>
+                <td className="max-w-[220px] px-2 py-2">
+                  <button type="button" className="block max-w-full truncate text-left hover:underline" onClick={() => onOpenGame(d.parentKey)}>
+                    {d.parentName}
+                  </button>
+                </td>
+                <td className="px-2 py-2 text-right">{d.isFree ? <span className="text-faint">무료</span> : <PriceLine p={d.priceKr} className="text-[13px]" />}</td>
+                <td className="px-2 py-2 text-right">{d.isFree ? '—' : <LowLine low={d.lowKr} fmt={won} />}</td>
+                <td className="px-2 py-2 text-right">
+                  <ReviewBadge review={d.review} compact />
+                </td>
+                <td className="num px-3 py-2 text-right">{won(d.purchasePrice)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > limit && (
+        <div className="flex justify-center">
+          <Button onClick={() => setLimit((l) => l + PAGE)}>더 보기 ({rows.length - limit}개 남음)</Button>
+        </div>
+      )}
+    </div>
   )
 }

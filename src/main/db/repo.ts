@@ -158,6 +158,7 @@ export class Repo {
         JSON.stringify(a.dlc ?? []),
         a.parentAppid ?? null
       )
+    if (a.status === 'ok' && a.dlc) this.db.prepare('UPDATE steam_app SET dlc_checked_at = ? WHERE appid = ?').run(now, a.appid)
   }
 
   /** 상세 정보가 없거나 오래된 appid */
@@ -285,6 +286,26 @@ export class Repo {
       .all<Row>()
     for (const r of rows) for (const d of JSON.parse(String(r.dlc)) as number[]) out.push({ parent: Number(r.appid), dlc: d })
     return out
+  }
+
+  /** DLC 목록을 아직 확인하지 않은 보유 게임 */
+  ownedGamesUncheckedDlc(): number[] {
+    return this.db
+      .prepare(
+        `SELECT CAST(g.game_id AS INTEGER) AS appid FROM games g
+         LEFT JOIN steam_app a ON a.appid = CAST(g.game_id AS INTEGER)
+         WHERE g.platform = 'steam' AND g.owned = 1 AND (a.appid IS NULL OR a.dlc_checked_at IS NULL)`
+      )
+      .all<Row>()
+      .map((r) => Number(r.appid))
+  }
+
+  /** 게임의 DLC 목록 저장. 상점 상세 정보에서 받은 목록과 합친다 */
+  setDlcList(parent: number, dlc: number[], now = Date.now()): void {
+    const cur = this.db.prepare('SELECT dlc FROM steam_app WHERE appid = ?').get<Row>(parent)
+    if (!cur) return
+    const merged = [...new Set([...(JSON.parse(String(cur.dlc ?? '[]')) as number[]), ...dlc])]
+    this.db.prepare('UPDATE steam_app SET dlc = ?, dlc_checked_at = ? WHERE appid = ?').run(JSON.stringify(merged), now, parent)
   }
 
   appidsWithoutApp(appids: number[]): number[] {

@@ -329,6 +329,50 @@ export async function getAppReview(appid: number): Promise<ReviewInfo | null> {
   return { percent: Math.round(((q.total_positive ?? 0) / q.total_reviews) * 100), count: q.total_reviews, label: q.review_score_desc ?? null }
 }
 
+// ───────── DLC 목록 ─────────
+
+/** 보유 게임들의 DLC 목록 한 번에 (IStoreBrowseService/GetDLCForApps). parent appid → DLC appid[] */
+export async function getDlcForOwnedGames(key: string, steamId: string, appids: number[], signal?: AbortSignal): Promise<Map<number, number[]>> {
+  const out = new Map<number, number[]>()
+  const add = (parent: number, dlc: number) => {
+    if (!parent || !dlc) return
+    const list = out.get(parent) ?? []
+    if (!list.includes(dlc)) list.push(dlc)
+    out.set(parent, list)
+  }
+  type Resp = { response?: { dlc_data?: { appid?: number; parentappid?: number }[] } }
+  const call = async (ids: number[] | null) => {
+    const input: Record<string, unknown> = { context: { language: 'koreana', country_code: 'KR', steam_realm: 1 }, steamid: steamId }
+    if (ids) input.appids = ids.map((appid) => ({ appid }))
+    const r = await request<Resp>(`${API}/IStoreBrowseService/GetDLCForApps/v1/?key=${encodeURIComponent(key)}&input_json=${encodeURIComponent(JSON.stringify(input))}`, {
+      limiter: limiters.steamApi,
+      signal,
+      timeoutMs: 60_000,
+      retries: 1
+    })
+    for (const d of r?.response?.dlc_data ?? []) add(Number(d.parentappid), Number(d.appid))
+  }
+  // 1) 계정 기준으로 한 번에
+  await call(null)
+  // 2) 비어 있으면 게임 목록을 넘겨서 다시
+  if (!out.size && appids.length) for (let i = 0; i < appids.length; i += 100) await call(appids.slice(i, i + 100))
+  return out
+}
+
+/** 지정한 게임들의 DLC 목록 (IStoreBrowseService/GetDLCForAppsSolr) */
+export async function getDlcForApps(key: string, appids: number[], signal?: AbortSignal): Promise<Map<number, number[]>> {
+  const out = new Map<number, number[]>()
+  for (let i = 0; i < appids.length; i += 100) {
+    const input = { appids: appids.slice(i, i + 100), context: { language: 'koreana', country_code: 'KR', steam_realm: 1 }, count: 2000 }
+    const r = await request<{ response?: { dlc_lists?: { parent_appid?: number; dlc_appids?: number[] }[] } }>(
+      `${API}/IStoreBrowseService/GetDLCForAppsSolr/v1/?key=${encodeURIComponent(key)}&input_json=${encodeURIComponent(JSON.stringify(input))}`,
+      { limiter: limiters.steamApi, signal, timeoutMs: 60_000, retries: 1 }
+    )
+    for (const l of r?.response?.dlc_lists ?? []) if (l.parent_appid) out.set(Number(l.parent_appid), (l.dlc_appids ?? []).map(Number))
+  }
+  return out
+}
+
 // ───────── 위시리스트 ─────────
 
 export async function getWishlist(
