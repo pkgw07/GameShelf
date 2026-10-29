@@ -58,8 +58,33 @@ jobs:
           path: dist/*.exe
           retention-days: 14
 
-      - name: Package and publish release
+      - name: Package for release
         if: ${{ env.PUBLISH == 'true' }}
-        run: npx electron-builder --win --publish always
+        run: npx electron-builder --win --publish never
+
+      - name: Publish to GitHub Releases
+        if: ${{ env.PUBLISH == 'true' }}
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $v = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tag = "v$v"
+          $files = @(Get-ChildItem dist -File | Where-Object { $_.Name -match '\.(exe|blockmap|yml)$' -and $_.Name -notmatch 'builder-debug' } | ForEach-Object { $_.FullName })
+          Write-Host "files: $($files -join ', ')"
+          if ($files.Count -lt 3) { Write-Host "::error::설치 파일, blockmap, latest.yml 중 일부가 없습니다: $($files -join ', ')"; exit 1 }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $out = gh release upload $tag @files --clobber 2>&1
+          } else {
+            $notes = "GameShelf $v`n`n**설치:** 아래 Assets에서 ``GameShelf-Setup-$v.exe``를 받아 실행하세요. 이미 설치했다면 프로그램이 자동으로 업데이트를 알려 줍니다.`n`n변경 내용은 [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)를 참고하세요."
+            $out = gh release create $tag @files --title "GameShelf $v" --notes $notes --target ${{ github.sha }} 2>&1
+          }
+          $code = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) {
+            $msg = (($out | Select-Object -Last 15) -join '%0A')
+            Write-Host "::error title=릴리스 게시 실패::$msg"
+            exit $code
+          }
