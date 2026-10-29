@@ -1,0 +1,32 @@
+appId: com.pkgw07.steamshelf
+productName: SteamShelf
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - resources/**
+  - node_modules/better-sqlite3/**
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+  artifactName: SteamShelf-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: SteamShelf
+mac:
+  target: dmg
+  icon: resources/icon.png
+npmRebuild: true
+publish:
+  provider: github
+  owner: pkgw07
+  repo: SteamShelf
+  releaseType: release

@@ -1,0 +1,231 @@
+// 통계·돈 계산 (순수 함수). 화면과 테스트에서 함께 사용한다.
+import type { GameRow, GenreWeight, LowInfo, PriceInfo, PricePoint, Settings } from './types'
+import { WEAK_GENRES, genreName } from './genres'
+
+export const DAY_MS = 86_400_000
+
+export function isUnplayed(g: Pick<GameRow, 'playtimeMin'>, unplayedMinutes: number): boolean {
+  return g.playtimeMin < Math.max(0, unplayedMinutes)
+}
+
+export type ExcludeReason = 'manual' | 'free' | 'unplayed' | 'genre'
+
+/** 통계에서 빠지는 이유. 빠지지 않으면 null */
+export function excludeReason(
+  g: GameRow,
+  s: Pick<Settings, 'excludeFree' | 'excludeUnplayed' | 'excludedGenres' | 'unplayedMinutes'>
+): ExcludeReason | null {
+  if (g.excludedManual) return 'manual'
+  if (s.excludeFree && g.isFree) return 'free'
+  if (s.excludeUnplayed && isUnplayed(g, s.unplayedMinutes)) return 'unplayed'
+  if (s.excludedGenres.length && g.genres.some((x) => s.excludedGenres.includes(x.id))) return 'genre'
+  return null
+}
+
+export const EXCLUDE_LABELS: Record<ExcludeReason, string> = {
+  manual: '직접 제외',
+  free: '무료 게임',
+  unplayed: '안 한 게임',
+  genre: '제외 장르'
+}
+
+/** Steam 역대 최저가: ITAD 값과 프로그램이 기록한 가격 중 더 낮은 쪽 */
+export function effectiveLow(itad: LowInfo | null, current: PriceInfo | null, selfMin: LowInfo | null): LowInfo | null {
+  const cands: LowInfo[] = []
+  if (itad) cands.push(itad)
+  if (selfMin) cands.push(selfMin)
+  if (current && current.final > 0) {
+    cands.push({
+      amount: current.final,
+      regular: current.initial,
+      cut: current.discount,
+      date: new Date(current.fetchedAt).toISOString(),
+      source: 'self'
+    })
+  }
+  if (!cands.length) return null
+  return cands.reduce((a, b) => (b.amount < a.amount ? b : a))
+}
+
+export interface MoneyTotals {
+  games: number
+  regularKr: number
+  currentKr: number
+  lowKr: number
+  regularUs: number
+  currentUs: number
+  lowUs: number
+  pricedKr: number
+  pricedUs: number
+  lowCountKr: number
+  spent: number
+  spentCount: number
+  /** 구매가가 있는 게임의 (정가 - 구매가) 합 */
+  saved: number
+  savedBase: number
+  onSale: number
+}
+
+export function moneyTotals(games: GameRow[]): MoneyTotals {
+  const t: MoneyTotals = {
+    games: games.length,
+    regularKr: 0,
+    currentKr: 0,
+    lowKr: 0,
+    regularUs: 0,
+    currentUs: 0,
+    lowUs: 0,
+    pricedKr: 0,
+    pricedUs: 0,
+    lowCountKr: 0,
+    spent: 0,
+    spentCount: 0,
+    saved: 0,
+    savedBase: 0,
+    onSale: 0
+  }
+  for (const g of games) {
+    if (g.priceKr) {
+      t.regularKr += g.priceKr.initial
+      t.currentKr += g.priceKr.final
+      t.pricedKr++
+      if (g.priceKr.discount > 0) t.onSale++
+    }
+    if (g.lowKr) {
+      t.lowKr += g.lowKr.amount
+      t.lowCountKr++
+    } else if (g.priceKr) {
+      t.lowKr += g.priceKr.final
+    }
+    if (g.priceUs) {
+      t.regularUs += g.priceUs.initial
+      t.currentUs += g.priceUs.final
+      t.pricedUs++
+    }
+    if (g.lowUs) t.lowUs += g.lowUs.amount
+    else if (g.priceUs) t.lowUs += g.priceUs.final
+    if (g.purchasePrice != null) {
+      t.spent += g.purchasePrice
+      t.spentCount++
+      if (g.priceKr) {
+        t.saved += g.priceKr.initial - g.purchasePrice
+        t.savedBase += g.priceKr.initial
+      }
+    }
+  }
+  return t
+}
+
+/** 시간당 비용 (원/시간). 구매가가 없거나 플레이 1시간 미만이면 null */
+export function costPerHour(g: GameRow, minHours = 1): number | null {
+  if (g.purchasePrice == null) return null
+  const h = g.playtimeMin / 60
+  if (h < minHours) return null
+  return g.purchasePrice / h
+}
+
+export type TimingGrade = 'best' | 'good' | 'fair' | 'pricey' | 'unknown'
+
+export const TIMING_LABELS: Record<TimingGrade, string> = {
+  best: '최저가 수준',
+  good: '잘 샀어요',
+  fair: '보통',
+  pricey: '비싸게 샀어요',
+  unknown: '판단 불가'
+}
+
+/** 구매 타이밍: 구매가를 역대 최저가와 정가 사이 어디쯤인지로 평가 */
+export function purchaseTiming(g: GameRow): { grade: TimingGrade; ratio: number | null } {
+  if (g.purchasePrice == null || !g.lowKr) return { grade: 'unknown', ratio: null }
+  const low = g.lowKr.amount
+  const reg = g.priceKr?.initial ?? g.lowKr.regular ?? null
+  if (g.purchasePrice <= low * 1.05) return { grade: 'best', ratio: 0 }
+  if (!reg || reg <= low) return { grade: 'fair', ratio: null }
+  const ratio = Math.min(1.5, Math.max(0, (g.purchasePrice - low) / (reg - low)))
+  if (ratio <= 0.35) return { grade: 'good', ratio }
+  if (ratio <= 0.75) return { grade: 'fair', ratio }
+  return { grade: 'pricey', ratio }
+}
+
+export function spendBy(games: GameRow[], unit: 'year' | 'month'): { label: string; amount: number; count: number }[] {
+  const m = new Map<string, { amount: number; count: number }>()
+  for (const g of games) {
+    const date = g.purchaseDate ?? g.acquiredDate
+    if (g.purchasePrice == null || !date) continue
+    const label = unit === 'year' ? date.slice(0, 4) : date.slice(0, 7)
+    const cur = m.get(label) ?? { amount: 0, count: 0 }
+    cur.amount += g.purchasePrice
+    cur.count++
+    m.set(label, cur)
+  }
+  return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([label, v]) => ({ label, ...v }))
+}
+
+/** 엔딩까지 남은 시간 (시간). 메인 스토리 기준 */
+export function hltbRemaining(g: GameRow): { total: number; remaining: number; progress: number } | null {
+  const main = g.hltb?.main
+  if (!main || main <= 0) return null
+  const played = g.playtimeMin / 60
+  return { total: main, remaining: Math.max(0, main - played), progress: Math.min(1, played / main) }
+}
+
+export const DONE_STATUSES = new Set(['cleared', 'completed', 'dropped'])
+
+export type DealVerdict = 'lowest' | 'near' | 'wait' | 'notOnSale' | 'unknown'
+
+export const VERDICT_LABELS: Record<DealVerdict, string> = {
+  lowest: '역대 최저가',
+  near: '최저가 근접',
+  wait: '더 기다리기',
+  notOnSale: '할인 없음',
+  unknown: '데이터 없음'
+}
+
+/** 현재가가 역대 최저가 대비 어느 수준인지 */
+export function dealVerdict(price: PriceInfo | null, low: LowInfo | null, nearPct = 0.05): DealVerdict {
+  if (!price) return 'unknown'
+  // 할인하지 않는 중이면 (한 번도 할인한 적 없어 정가 = 최저가인 경우 포함) 판정하지 않는다
+  if (price.discount === 0) return 'notOnSale'
+  if (!low) return 'unknown'
+  if (price.final <= low.amount) return 'lowest'
+  if (price.final <= low.amount * (1 + nearPct)) return 'near'
+  return 'wait'
+}
+
+/** 플레이타임 가중 장르 취향. 로그 스케일로 한 게임의 독식을 막는다 */
+export function genreProfile(games: GameRow[], unplayedMinutes: number): GenreWeight[] {
+  const m = new Map<string, GenreWeight>()
+  for (const g of games) {
+    if (isUnplayed(g, unplayedMinutes)) continue
+    const hours = g.playtimeMin / 60
+    const w = Math.log1p(hours)
+    for (const gr of g.genres) {
+      const cur = m.get(gr.id) ?? { id: gr.id, name: genreName(gr.id, gr.name), weight: 0, hours: 0, count: 0 }
+      cur.weight += WEAK_GENRES.has(gr.id) ? w * 0.4 : w
+      cur.hours += hours
+      cur.count++
+      m.set(gr.id, cur)
+    }
+  }
+  const list = [...m.values()].sort((a, b) => b.weight - a.weight)
+  const max = list[0]?.weight || 1
+  return list.map((x) => ({ ...x, weight: x.weight / max }))
+}
+
+/** 가격 이력을 계단형 그래프용으로 정리 (시간순, 중복 제거) */
+export function normalizeHistory(points: PricePoint[]): PricePoint[] {
+  const sorted = [...points].sort((a, b) => a.t - b.t)
+  const out: PricePoint[] = []
+  for (const p of sorted) {
+    const last = out[out.length - 1]
+    if (last && last.final === p.final && last.initial === p.initial) continue
+    out.push(p)
+  }
+  return out
+}
+
+/** 한국 가격 / (미국 가격 × 환율). 1보다 작으면 한국이 더 쌈 */
+export function regionRatio(g: Pick<GameRow, 'priceKr' | 'priceUs'>, rate: number): number | null {
+  if (!g.priceKr || !g.priceUs || g.priceUs.initial <= 0 || g.priceKr.initial <= 0) return null
+  return g.priceKr.initial / ((g.priceUs.initial / 100) * rate)
+}

@@ -1,0 +1,151 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --paper: #f3f5f8;
+  --surface: #ffffff;
+  --surface-2: #f8f9fb;
+  --line: #e2e6ec;
+  --line-strong: #cdd3dc;
+  --ink: #18202e;
+  --muted: #5d6779;
+  --faint: #929bab;
+  --brand: #1e6b52;
+  --brand-ink: #ffffff;
+  --brand-soft: #e2f0ea;
+  --sale: #a8691a;
+  --sale-soft: #fbf0d9;
+  --good: #1d7f55;
+  --bad: #b93c28;
+  --bad-soft: #f9e6e1;
+  --chart-1: #1e6b52;
+  --chart-2: #3f7fbf;
+  --chart-3: #c4892c;
+  --chart-4: #8b5fb8;
+  --chart-5: #c25b4a;
+  --shadow: 0 1px 2px rgba(24, 32, 46, 0.06);
+  color-scheme: light;
+}
+
+.dark {
+  --paper: #12161c;
+  --surface: #1a2029;
+  --surface-2: #202732;
+  --line: #2a3340;
+  --line-strong: #3a4554;
+  --ink: #e7ebf1;
+  --muted: #a1abbb;
+  --faint: #6f7a8b;
+  --brand: #3fb489;
+  --brand-ink: #0e1a15;
+  --brand-soft: #193429;
+  --sale: #eeb04a;
+  --sale-soft: #3a2d15;
+  --good: #4cc28f;
+  --bad: #ef7a63;
+  --bad-soft: #3a1f1a;
+  --chart-1: #3fb489;
+  --chart-2: #6aa7e3;
+  --chart-3: #e2a94b;
+  --chart-4: #b08ae0;
+  --chart-5: #e5806e;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Pretendard Variable', Pretendard, -apple-system, 'Segoe UI', 'Malgun Gothic', sans-serif;
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-brand: var(--brand);
+  --color-brand-ink: var(--brand-ink);
+  --color-brand-soft: var(--brand-soft);
+  --color-sale: var(--sale);
+  --color-sale-soft: var(--sale-soft);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  word-break: keep-all;
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* 스크롤바 */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.drawer-in {
+  animation: drawer-in 180ms ease-out;
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer-in,
+  .pulse-dot {
+    animation: none;
+  }
+}

@@ -1,0 +1,57 @@
+name: Build
+
+# main 에 올리면: 빌드가 되는지 검사하고 설치 파일을 Actions 결과물로 남김
+# v* 태그를 올리면: 설치 파일을 만들어 Releases 에 게시 → 설치된 프로그램이 자동 업데이트
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install
+        run: npm install
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+      - name: Self-test inside Electron
+        shell: pwsh
+        run: |
+          npx electron . --selftest
+          $code = $LASTEXITCODE
+          Get-Content selftest-result.json
+          if ($code -ne 0) { exit $code }
+
+      - name: Package
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npx electron-builder --win --publish never
+
+      - name: Upload installer
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SteamShelf-Setup
+          path: dist/*.exe
+          retention-days: 14
+
+      - name: Package and publish release
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        run: npx electron-builder --win --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
