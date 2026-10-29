@@ -21,7 +21,7 @@ Steam 라이브러리를 불러와서 게임 수, 가격(정가·현재가·역�
 ## 새 버전 배포하기 (개발용)
 
 1. `package.json`의 `version`을 올리고 `CHANGELOG.md`에 변경 내용을 적습니다.
-2. 커밋 후 `v버전` 태그를 올리면(예: `git tag v1.0.1 && git push origin v1.0.1`) GitHub Actions가 설치 파일을 만들어 Releases에 게시합니다.
+2. 커밋 메시지에 `[release]`를 넣어 `main`에 올리면 GitHub Actions가 설치 파일을 만들어 `v버전` 이름으로 Releases에 게시합니다. (`v버전` 태그를 올리거나 Actions 화면에서 직접 실행해도 됩니다.)
 3. `main`에 올리기만 하면 빌드 검사만 하고, 설치 파일은 Actions 실행 결과물에 남습니다.
 
 로컬에서 개발할 때는 Node.js 22 이상에서 `npm install` 후 `npm run dev`.
