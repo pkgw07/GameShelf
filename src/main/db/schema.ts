@@ -1,6 +1,6 @@
 import type { Db } from './driver'
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 
 // 플랫폼 공통 데이터: games, user_data, playtime_snapshots, play_sessions, hltb
 // Steam 전용 데이터: steam_* (appid 기준)
@@ -178,7 +178,41 @@ CREATE TABLE IF NOT EXISTS reco_pool (
 );
 `
 
+// 1.1.0: DLC, Steam 평가, 위시리스트 목표가, 도전과제 희귀도 수집 시각
+const SQL_V2 = `
+CREATE TABLE IF NOT EXISTS steam_reviews (
+  appid INTEGER PRIMARY KEY,
+  percent INTEGER,
+  count INTEGER NOT NULL DEFAULT 0,
+  label TEXT,
+  fetched_at INTEGER NOT NULL
+);
+
+-- DLC 보유 여부 (Steam API로 알 수 없어 가져오기/직접 표시로 관리)
+CREATE TABLE IF NOT EXISTS dlc_owned (
+  appid INTEGER PRIMARY KEY,
+  owned INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS wish_user (
+  appid INTEGER PRIMARY KEY,
+  target_price INTEGER,
+  notified_target_price INTEGER,
+  notified_low_price INTEGER
+);
+`
+
+function hasColumn(db: Db, table: string, col: string): boolean {
+  return db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>().some((c) => c.name === col)
+}
+
 export function migrate(db: Db): void {
   db.exec(SQL)
+  db.exec(SQL_V2)
+  if (!hasColumn(db, 'steam_app', 'dlc')) db.exec(`ALTER TABLE steam_app ADD COLUMN dlc TEXT NOT NULL DEFAULT '[]'`)
+  if (!hasColumn(db, 'steam_app', 'parent_appid')) db.exec(`ALTER TABLE steam_app ADD COLUMN parent_appid INTEGER`)
+  if (!hasColumn(db, 'steam_ach_summary', 'pct_fetched_at')) db.exec(`ALTER TABLE steam_ach_summary ADD COLUMN pct_fetched_at INTEGER`)
   db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run('schema_version', String(SCHEMA_VERSION))
 }

@@ -1,5 +1,5 @@
 // 화면에 보여줄 분석 데이터: 게임 상세, 활동 기록, 추천, 가격 검색, 엔딩 시간
-import { genreProfile, excludeReason, isUnplayed } from '@shared/analytics'
+import { effectiveLow, genreProfile, excludeReason, isUnplayed } from '@shared/analytics'
 import { genreByEn, genreById, genreName } from '@shared/genres'
 import type {
   ActivityData,
@@ -13,7 +13,7 @@ import type {
 } from '@shared/types'
 import type { Repo } from '../db/repo'
 import { keyOf, parseKey, steamHeader } from '../db/repo'
-import { getAppDetails, getGlobalAchievementPct, getPricesBatch } from '../providers/steam'
+import { getAppDetails, getAppReview, getGlobalAchievementPct, getPricesBatch, getStoreItems } from '../providers/steam'
 import { limiters, request } from '../util/http'
 import { addDays, dateRange, kstDate, recordDate } from '../util/time'
 import { findHltb } from './hltb'
@@ -34,7 +34,8 @@ export class Insights {
       historyKr: appid != null ? this.repo.priceHistory(appid, 'kr') : [],
       historyUs: appid != null ? this.repo.priceHistory(appid, 'us') : [],
       sessions: this.repo.sessions({ key, limit: 50 }),
-      playtimeSeries: this.repo.playtimeSeries(key)
+      playtimeSeries: this.repo.playtimeSeries(key),
+      dlcs: this.repo.listDlcs(key)
     }
   }
 
@@ -267,6 +268,16 @@ export class Insights {
       notes.push('설정에서 IsThereAnyDeal API 키를 넣으면 역대 최저가와 할인 이력을 볼 수 있습니다.')
     }
 
+    let review = this.repo.getReview(appid)
+    try {
+      const it = (await getStoreItems([appid])).get(appid)
+      if (it?.review) review = it.review
+      else review = review ?? (await getAppReview(appid))
+      if (review) this.repo.saveReview(appid, review)
+    } catch {
+      // 평가 없이 표시
+    }
+
     const pk = app.status === 'ok' && priceKr ? { ...priceKr, fetchedAt: now } : null
     const pu = priceUs ? { ...priceUs, fetchedAt: now } : null
     return {
@@ -283,21 +294,21 @@ export class Insights {
       owned,
       inWishlist,
       itadAvailable,
-      notes
+      notes,
+      review
     }
   }
 
   private lowFrom(appid: number, region: 'kr' | 'us', cur: PriceInspection['priceKr'], hist: PricePoint[]) {
     const itad = this.repo.getItadLow(appid, region)
+    const other = this.repo.getItadLow(appid, region === 'kr' ? 'us' : 'kr')
     const fromHist = hist.filter((p) => p.final > 0).reduce<PricePoint | null>((a, b) => (!a || b.final < a.final ? b : a), null)
-    const cands = [
-      itad,
-      fromHist
-        ? { amount: fromHist.final, regular: fromHist.initial, cut: fromHist.discount, date: new Date(fromHist.t).toISOString(), source: fromHist.source }
-        : null,
-      cur && cur.final > 0 ? { amount: cur.final, regular: cur.initial, cut: cur.discount, date: new Date().toISOString(), source: 'self' as const } : null
-    ].filter((x): x is NonNullable<typeof x> => Boolean(x))
-    return cands.length ? cands.reduce((a, b) => (b.amount < a.amount ? b : a)) : null
+    const histLow = fromHist
+      ? { amount: fromHist.final, regular: fromHist.initial, cut: fromHist.discount, date: new Date(fromHist.t).toISOString(), source: fromHist.source }
+      : null
+    // 다른 지역 이력의 최대 할인율도 추정에 사용
+    const otherHist = Math.max(other?.cut ?? 0, 0)
+    return effectiveLow(itad, cur, histLow, otherHist || null)
   }
 
   private async itadId(key: string, appid: number): Promise<string | null> {

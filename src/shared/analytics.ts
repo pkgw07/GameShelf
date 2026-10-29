@@ -29,13 +29,32 @@ export const EXCLUDE_LABELS: Record<ExcludeReason, string> = {
   genre: '제외 장르'
 }
 
-/** Steam 역대 최저가: ITAD 값과 프로그램이 기록한 가격 중 더 낮은 쪽 */
-export function effectiveLow(itad: LowInfo | null, current: PriceInfo | null, selfMin: LowInfo | null): LowInfo | null {
-  const cands: LowInfo[] = []
-  if (itad) cands.push(itad)
-  if (selfMin) cands.push(selfMin)
+/** 할인율로 계산한 가격. Steam은 원화는 원 단위, 달러는 센트 내림으로 계산한다 */
+export function priceAtCut(currency: string, regular: number, cut: number): number {
+  const v = regular * (1 - cut / 100)
+  return currency === 'USD' ? Math.floor(v + 1e-6) : Math.round(v)
+}
+
+/**
+ * Steam 역대 최저가 = 역대 최대 할인율로 팔렸던 가격.
+ * 현재 할인 여부와 상관없이 같은 값을 보여 준다.
+ *  - itad: 이 지역의 IsThereAnyDeal 기록 (가장 정확)
+ *  - selfMin: 프로그램이 기록한 가격 중 최저
+ *  - current: 지금 가격 (지금이 역대 최대 할인이면 이것이 최저가)
+ *  - otherCut: 다른 지역(미국)에서 기록된 최대 할인율. 이 지역 기록이 없을 때 정가에 적용해 추정
+ */
+export function effectiveLow(
+  itad: LowInfo | null,
+  current: PriceInfo | null,
+  selfMin: LowInfo | null,
+  otherCut: number | null = null
+): LowInfo | null {
+  const regular = current?.initial ?? itad?.regular ?? selfMin?.regular ?? null
+  const actual: LowInfo[] = []
+  if (itad) actual.push(itad)
+  if (selfMin) actual.push(selfMin)
   if (current && current.final > 0) {
-    cands.push({
+    actual.push({
       amount: current.final,
       regular: current.initial,
       cut: current.discount,
@@ -43,8 +62,16 @@ export function effectiveLow(itad: LowInfo | null, current: PriceInfo | null, se
       source: 'self'
     })
   }
-  if (!cands.length) return null
-  return cands.reduce((a, b) => (b.amount < a.amount ? b : a))
+  let best: LowInfo | null = actual.length ? actual.reduce((a, b) => (b.amount < a.amount ? b : a)) : null
+  // 이 지역 기록이 없으면 다른 지역의 최대 할인율로 추정
+  if (!itad && otherCut && otherCut > 0 && regular && regular > 0) {
+    const est = priceAtCut(current?.currency ?? 'KRW', regular, otherCut)
+    if (!best || est < best.amount) best = { amount: est, regular, cut: otherCut, date: null, source: 'estimate' }
+  }
+  if (!best) return null
+  // 표시용 할인율은 정가 대비로 다시 계산 (기록마다 정가가 달랐을 수 있음)
+  const cut = regular && regular > 0 ? Math.max(0, Math.round((1 - best.amount / regular) * 100)) : best.cut
+  return { ...best, regular: regular ?? best.regular, cut }
 }
 
 export interface MoneyTotals {
@@ -66,7 +93,9 @@ export interface MoneyTotals {
   onSale: number
 }
 
-export function moneyTotals(games: GameRow[]): MoneyTotals {
+export type PricedItem = Pick<GameRow, 'priceKr' | 'priceUs' | 'lowKr' | 'lowUs' | 'purchasePrice'>
+
+export function moneyTotals(games: PricedItem[]): MoneyTotals {
   const t: MoneyTotals = {
     games: games.length,
     regularKr: 0,
@@ -147,7 +176,7 @@ export function purchaseTiming(g: GameRow): { grade: TimingGrade; ratio: number 
   return { grade: 'pricey', ratio }
 }
 
-export function spendBy(games: GameRow[], unit: 'year' | 'month'): { label: string; amount: number; count: number }[] {
+export function spendBy(games: { purchasePrice: number | null; purchaseDate: string | null; acquiredDate?: string | null }[], unit: 'year' | 'month'): { label: string; amount: number; count: number }[] {
   const m = new Map<string, { amount: number; count: number }>()
   for (const g of games) {
     const date = g.purchaseDate ?? g.acquiredDate

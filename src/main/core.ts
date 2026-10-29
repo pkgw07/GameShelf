@@ -12,6 +12,7 @@ export interface CoreEvents {
   syncState(s: SyncState): void
   nowPlaying(n: NowPlaying | null): void
   dataChanged(): void
+  notify?(title: string, body: string, appid?: number): void
 }
 
 export class Core {
@@ -32,7 +33,7 @@ export class Core {
     this.repo = new Repo(this.db)
     this.settings = new SettingsStore(this.repo, codec)
     const get = (): Settings => this.settings.get()
-    this.sync = new SyncService(this.repo, get, events.syncState, events.dataChanged)
+    this.sync = new SyncService(this.repo, get, events.syncState, events.dataChanged, events.notify)
     this.insights = new Insights(this.repo, get)
     this.nowPlaying = new NowPlayingService(this.repo, get, events.nowPlaying, (appid) => void this.sync.quickRefresh(appid))
   }

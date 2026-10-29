@@ -9,12 +9,12 @@ import {
   regionRatio,
   TIMING_LABELS
 } from '@shared/analytics'
-import type { GameDetail, GameRow, PricePoint } from '@shared/types'
+import type { DlcRow, GameDetail, GameRow, PricePoint } from '@shared/types'
 import { cn } from '@/lib/cn'
 import { dateKo, duration, hours, hoursFromH, parseWon, price, relative, usd, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 import { StepChart } from './charts'
-import { Cover, PriceLine, StatusPicker, VerdictBadge } from './game'
+import { Cover, LowLine, PriceLine, ReviewBadge, StatusPicker, VerdictBadge } from './game'
 import { Badge, Button, Input, Progress, Spinner, Switch } from './ui'
 
 export function GameDrawer() {
@@ -112,6 +112,13 @@ function DrawerBody({ game: g }: { game: GameRow }) {
       <div className="px-6 pt-5 pb-4">
         <h2 className="text-2xl leading-tight font-bold text-ink">{g.nameKo || g.name}</h2>
         {g.nameKo && g.nameKo !== g.name && <div className="mt-0.5 text-[13px] text-muted">{g.name}</div>}
+        {g.review && (
+          <div className="mt-1.5 text-[13px]">
+            <span className="text-muted">Steam 평가 </span>
+            <ReviewBadge review={g.review} />
+            <span className="num ml-1 text-faint">({g.review.count.toLocaleString()}개)</span>
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap gap-1.5">
           {g.genres.map((x) => (
             <Badge key={x.id}>{x.name}</Badge>
@@ -229,10 +236,14 @@ function DrawerBody({ game: g }: { game: GameRow }) {
             <Row label="현재가">
               <PriceLine p={g.priceKr} />
             </Row>
-            <Row label="Steam 역대 최저가">{g.lowKr ? won(g.lowKr.amount) : '—'}</Row>
-            {g.lowKr?.date && (
+            <Row label="Steam 역대 최저가">
+              <LowLine low={g.lowKr} fmt={won} />
+            </Row>
+            {g.lowKr && (
               <div className="text-right text-[11px] text-faint">
-                {dateKo(g.lowKr.date)} · {g.lowKr.source === 'itad' ? 'IsThereAnyDeal' : '프로그램 기록'}
+                {g.lowKr.source === 'estimate'
+                  ? '미국 최대 할인율을 한국 정가에 적용'
+                  : `${g.lowKr.date ? dateKo(g.lowKr.date) + ' · ' : ''}${g.lowKr.source === 'itad' ? 'IsThereAnyDeal' : '프로그램 기록'}`}
               </div>
             )}
           </div>
@@ -242,7 +253,9 @@ function DrawerBody({ game: g }: { game: GameRow }) {
             <Row label="현재가">
               <PriceLine p={g.priceUs} />
             </Row>
-            <Row label="Steam 역대 최저가">{usd(g.lowUs?.amount)}</Row>
+            <Row label="Steam 역대 최저가">
+              <LowLine low={g.lowUs} fmt={usd} />
+            </Row>
             {ratio != null && (
               <div className="text-right text-[11px] text-faint">
                 한국 정가가 미국의 {(ratio * 100).toFixed(0)}% 수준 (환율 {settings?.usdKrwRate.toLocaleString()}원)
@@ -268,6 +281,8 @@ function DrawerBody({ game: g }: { game: GameRow }) {
           )}
         </div>
       </Section>
+
+      {detail && detail.dlcs.length > 0 && <DlcSection dlcs={detail.dlcs} onChanged={async () => setDetail(await window.api.getGameDetail(g.key))} />}
 
       <Section
         title="엔딩까지"
@@ -401,5 +416,84 @@ function DrawerBody({ game: g }: { game: GameRow }) {
       )}
       <div className="h-8" />
     </>
+  )
+}
+
+function DlcSection({ dlcs, onChanged }: { dlcs: DlcRow[]; onChanged(): Promise<void> }) {
+  const { reload, toast } = useStore()
+  const [showAll, setShowAll] = useState(false)
+  const owned = dlcs.filter((d) => d.owned)
+  const list = showAll ? dlcs : [...owned, ...dlcs.filter((d) => !d.owned)].slice(0, 12)
+  const ownedValue = owned.reduce((a, d) => a + (d.priceKr?.initial ?? 0), 0)
+  const toggle = async (d: DlcRow) => {
+    try {
+      await window.api.setDlcOwned(d.appid, !d.owned)
+      await Promise.all([onChanged(), reload()])
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+  return (
+    <Section
+      title={`DLC · 보유 ${owned.length}/${dlcs.length}`}
+      action={owned.length > 0 ? <span className="num text-[12px] text-muted">보유 DLC 정가 {won(ownedValue)}</span> : undefined}
+    >
+      <p className="mb-2 text-[12px] text-faint">
+        Steam API로는 DLC 보유 여부를 알 수 없어서, 구매 내역·라이선스를 가져오면 자동으로 표시되고 직접 체크할 수도 있습니다.
+      </p>
+      <ul className="divide-y divide-line">
+        {list.map((d) => (
+          <DlcItem key={d.appid} d={d} onToggle={() => void toggle(d)} onSaved={onChanged} />
+        ))}
+      </ul>
+      {dlcs.length > list.length && (
+        <button type="button" className="mt-2 text-[13px] text-brand underline" onClick={() => setShowAll(true)}>
+          DLC {dlcs.length - list.length}개 더 보기
+        </button>
+      )}
+    </Section>
+  )
+}
+
+function DlcItem({ d, onToggle, onSaved }: { d: DlcRow; onToggle(): void; onSaved(): Promise<void> }) {
+  const { reload } = useStore()
+  const [price, setPrice] = useState(d.purchasePrice != null ? String(d.purchasePrice) : '')
+  return (
+    <li className="flex items-center gap-3 py-2">
+      <input type="checkbox" className="h-4 w-4 accent-[var(--brand)]" checked={d.owned} onChange={onToggle} aria-label="보유" />
+      <div className="min-w-0 flex-1">
+        <button
+          type="button"
+          className="block max-w-full truncate text-left text-[13px] font-medium text-ink hover:underline"
+          onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${d.appid}/`)}
+        >
+          {d.name}
+        </button>
+        <div className="flex flex-wrap items-center gap-x-2 text-[12px]">
+          {d.isFree ? <span className="text-faint">무료</span> : <PriceLine p={d.priceKr} className="text-[12px]" />}
+          {!d.isFree && d.lowKr && d.lowKr.cut > 0 && (
+            <span className="text-faint">
+              역대 최저 <LowLine low={d.lowKr} fmt={won} className="text-[12px]" />
+            </span>
+          )}
+          <ReviewBadge review={d.review} compact />
+        </div>
+      </div>
+      {d.owned && !d.isFree && (
+        <Input
+          className="num h-8 w-28 text-right text-[13px]"
+          inputMode="numeric"
+          placeholder="구매가"
+          value={price ? Number(price).toLocaleString('ko-KR') : ''}
+          onChange={(e) => setPrice(String(parseWon(e.target.value) ?? ''))}
+          onBlur={async () => {
+            const v = price === '' ? null : Number(price)
+            if (v === d.purchasePrice) return
+            await window.api.updateUserData(d.key, { purchasePrice: v })
+            await Promise.all([onSaved(), reload()])
+          }}
+        />
+      )}
+    </li>
   )
 }

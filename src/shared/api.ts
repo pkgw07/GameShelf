@@ -2,6 +2,7 @@ import type {
   ActivityData,
   AppInfo,
   BackupResult,
+  DlcRow,
   GameDetail,
   GameRow,
   HltbInfo,
@@ -12,14 +13,17 @@ import type {
   PriceInspection,
   PricePoint,
   ProfileInfo,
+  PurchaseApplyItem,
   PurchaseRecord,
+  RareAchievement,
   RecommendationResult,
   Settings,
   StoreSearchResult,
   SyncState,
   UpdateState,
   UserDataPatch,
-  WishlistRow
+  WishlistRow,
+  YearReview
 } from './types'
 
 /** 화면에서 window.api 로 호출하는 기능 목록 */
@@ -32,6 +36,14 @@ export interface GameShelfApi {
 
   getLibrary(): Promise<GameRow[]>
   getWishlist(): Promise<WishlistRow[]>
+  getDlcs(): Promise<DlcRow[]>
+  setDlcOwned(appid: number, owned: boolean): Promise<void>
+  setTargetPrice(appid: number, price: number | null): Promise<void>
+  getRareAchievements(limit: number): Promise<RareAchievement[]>
+  getYearReview(year: number): Promise<YearReview>
+  ocrImage(dataUrl: string): Promise<string>
+  applyPurchases(items: PurchaseApplyItem[]): Promise<number>
+  testNotification(): Promise<void>
   updateUserData(key: string, patch: UserDataPatch): Promise<GameRow | null>
   bulkUpdate(keys: string[], patch: UserDataPatch): Promise<void>
   getGameDetail(key: string): Promise<GameDetail>

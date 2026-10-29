@@ -3,7 +3,7 @@ import { LuExternalLink, LuSearch } from 'react-icons/lu'
 import { dealVerdict, normalizeHistory, VERDICT_LABELS } from '@shared/analytics'
 import type { PriceInspection, StoreSearchResult } from '@shared/types'
 import { StepChart } from '@/components/charts'
-import { Cover, PriceLine, VERDICT_TONE } from '@/components/game'
+import { Cover, LowLine, PriceLine, ReviewBadge, VERDICT_TONE } from '@/components/game'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Panel, Segmented, Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
@@ -134,6 +134,13 @@ function Inspection({ info }: { info: PriceInspection }) {
               <Badge key={g.id}>{g.name}</Badge>
             ))}
           </div>
+          {info.review && (
+            <div className="mt-1.5 text-[13px]">
+              <span className="text-muted">Steam 평가 </span>
+              <ReviewBadge review={info.review} />
+              <span className="num ml-1 text-faint">({info.review.count.toLocaleString()}개)</span>
+            </div>
+          )}
           <div className="mt-4 flex items-end gap-4">
             <div>
               <div className="text-[12px] text-muted">현재 가격 ({region === 'kr' ? '한국' : '미국'})</div>
@@ -163,12 +170,16 @@ function Inspection({ info }: { info: PriceInspection }) {
         </div>
         <div>
           <div className="text-[12px] text-muted">Steam 역대 최저가</div>
-          <div className="num text-lg font-bold text-good">{low ? fmt(low.amount) : '—'}</div>
-          {low?.date && <div className="text-[11px] text-faint">{dateKo(low.date)}</div>}
+          <div className="text-lg">
+            <LowLine low={low} fmt={fmt} />
+          </div>
+          <div className="text-[11px] text-faint">
+            {low?.source === 'estimate' ? '미국 최대 할인율 기준' : low?.date ? dateKo(low.date) : ''}
+          </div>
         </div>
         <div>
           <div className="text-[12px] text-muted">역대 최대 할인율</div>
-          <div className="num text-lg font-bold">{maxCut ? `${maxCut}%` : '—'}</div>
+          <div className="num text-lg font-bold">{Math.max(maxCut, low?.cut ?? 0) ? `${Math.max(maxCut, low?.cut ?? 0)}%` : '—'}</div>
           <div className="text-[11px] text-faint">지금 {cur?.discount ?? 0}%</div>
         </div>
         <div>

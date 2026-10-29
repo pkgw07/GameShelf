@@ -1,7 +1,8 @@
 // Steam 구매 내역 / 라이선스 페이지 가져오기
 // 화면에서 저장된 HTML을 파싱해 행 목록으로 보내면, 여기서 보유 게임과 이름을 맞춘다.
-import type { GameRow, ImportItemResult, ImportResult, ParsedLicenseRow, ParsedPurchaseRow } from '@shared/types'
+import type { ImportItemResult, ImportResult, ParsedLicenseRow, ParsedPurchaseRow, PriceInfo, PurchaseApplyItem } from '@shared/types'
 import type { Repo } from '../db/repo'
+import { parseKey } from '../db/repo'
 import { similarity } from './hltb'
 
 const SUFFIXES = [
@@ -22,9 +23,25 @@ export function normalizeName(s: string): string {
     .trim()
 }
 
+/** 이름으로 찾을 대상 (게임 또는 DLC) */
+export interface Matchable {
+  key: string
+  name: string
+  nameKo: string | null
+  priceKr: PriceInfo | null
+  isDlc: boolean
+}
+
+/** 보유 게임 + 보유 게임의 DLC */
+export function matchables(repo: Repo): Matchable[] {
+  const games: Matchable[] = repo.listGames().map((g) => ({ key: g.key, name: g.name, nameKo: g.nameKo, priceKr: g.priceKr, isDlc: false }))
+  const dlcs: Matchable[] = repo.listDlcs().map((d) => ({ key: d.key, name: d.name, nameKo: null, priceKr: d.priceKr, isDlc: true }))
+  return [...games, ...dlcs]
+}
+
 export class NameIndex {
-  private exact = new Map<string, GameRow>()
-  constructor(private games: GameRow[]) {
+  private exact = new Map<string, Matchable>()
+  constructor(private games: Matchable[]) {
     for (const g of games) {
       for (const n of [g.name, g.nameKo]) {
         if (!n) continue
@@ -34,12 +51,12 @@ export class NameIndex {
     }
   }
 
-  match(name: string): GameRow | null {
+  match(name: string): Matchable | null {
     const k = normalizeName(name)
     if (!k) return null
     const hit = this.exact.get(k)
     if (hit) return hit
-    let best: GameRow | null = null
+    let best: Matchable | null = null
     let score = 0
     for (const g of this.games) {
       for (const n of [g.name, g.nameKo]) {
@@ -69,8 +86,7 @@ export function splitAmount(total: number, weights: number[]): number[] {
 }
 
 export function importPurchases(repo: Repo, rows: ParsedPurchaseRow[]): ImportResult {
-  const games = repo.listGames()
-  const idx = new NameIndex(games)
+  const idx = new NameIndex(matchables(repo))
   const unmatched: ImportItemResult[] = []
   let matched = 0
   let skippedManual = 0
@@ -103,6 +119,7 @@ export function importPurchases(repo: Repo, rows: ParsedPurchaseRow[]): ImportRe
           unmatched.push({ itemName: h.item, date: r.date, amount, matchedKey: null, matchedName: null })
           return
         }
+        if (h.game.isDlc) repo.setDlcOwned(parseKey(h.game.key).appid as number, true, 'purchase')
         if (repo.setImportedPurchase(h.game.key, amount, r.date)) matched++
         else skippedManual++
       })
@@ -112,12 +129,13 @@ export function importPurchases(repo: Repo, rows: ParsedPurchaseRow[]): ImportRe
 }
 
 export function importLicenses(repo: Repo, rows: ParsedLicenseRow[]): ImportResult {
-  const idx = new NameIndex(repo.listGames())
+  const idx = new NameIndex(matchables(repo))
   const unmatched: ImportItemResult[] = []
   let matched = 0
   repo.db.tx(() => {
     for (const r of rows) {
       const g = idx.match(r.name)
+      if (g?.isDlc) repo.setDlcOwned(parseKey(g.key).appid as number, true, 'license')
       if (!g) {
         unmatched.push({ itemName: r.name, date: r.date, amount: null, matchedKey: null, matchedName: null })
         continue
@@ -129,4 +147,20 @@ export function importLicenses(repo: Repo, rows: ParsedLicenseRow[]): ImportResu
     }
   })
   return { kind: 'licenses', totalRows: rows.length, matched, skippedManual: 0, unmatched }
+}
+
+/** 붙여넣기·캡처에서 인식해 화면에서 확인한 항목 적용 (직접 확인했으므로 직접 입력으로 저장) */
+export function applyPurchases(repo: Repo, items: PurchaseApplyItem[]): number {
+  let n = 0
+  const ownedGames = new Set(repo.ownedSteamAppids())
+  repo.db.tx(() => {
+    for (const it of items) {
+      const { appid } = parseKey(it.key)
+      const isDlc = appid != null && !ownedGames.has(appid)
+      if (isDlc) repo.setDlcOwned(appid as number, true, 'manual')
+      repo.patchUserData(it.key, { purchasePrice: it.amount, ...(it.date ? { purchaseDate: it.date } : {}) })
+      n++
+    }
+  })
+  return n
 }

@@ -11,14 +11,14 @@ import { useStore } from '@/lib/store'
 const STALE_SEC = 90 * 86_400
 
 export function Dashboard() {
-  const { games, included, settings, go, openGame, updateGame, wishlist, sync } = useStore()
+  const { games, included, priced, ownedDlcs, settings, go, openGame, updateGame, wishlist, sync } = useStore()
   const [activity, setActivity] = useState<ActivityData | null>(null)
   useEffect(() => {
     void window.api.getActivity(30).then(setActivity)
   }, [games])
 
   const unplayedMin = settings?.unplayedMinutes ?? 30
-  const t = useMemo(() => moneyTotals(included), [included])
+  const t = useMemo(() => moneyTotals(priced), [priced])
   const stats = useMemo(() => {
     const unplayed = included.filter((g) => isUnplayed(g, unplayedMin))
     const totalMin = included.reduce((a, g) => a + g.playtimeMin, 0)
@@ -72,7 +72,7 @@ export function Dashboard() {
   const ledger = [
     { label: '정가 총합', amount: t.regularKr, sub: `미국 정가 ${usd(t.regularUs)}`, color: 'var(--line-strong)' },
     { label: '현재가 총합', amount: t.currentKr, sub: `할인 중 ${t.onSale}개 반영 · 미국 ${usd(t.currentUs)}`, color: 'var(--sale)' },
-    { label: 'Steam 역대 최저가 총합', amount: t.lowKr, sub: `미국 ${usd(t.lowUs)}`, color: 'var(--good)' },
+    { label: 'Steam 역대 최저가 총합', amount: t.lowKr, sub: `각 게임 최대 할인율 기준 · 미국 ${usd(t.lowUs)}`, color: 'var(--good)' },
     {
       label: '실제 지출',
       amount: t.spentCount ? t.spent : null,
@@ -109,7 +109,7 @@ export function Dashboard() {
               </div>
             ))}
             <p className="mt-2 text-[12px] text-faint">
-              가격이 있는 {t.pricedKr}개 게임 기준 · 통계 제외 {games.length - included.length}개
+              가격이 있는 {t.pricedKr}개 기준{settings?.includeDlcInTotals && ownedDlcs.length ? ` (보유 DLC ${ownedDlcs.length}개 포함)` : ''} · 통계 제외 {games.length - included.length}개
               {t.spentCount > 0 && t.savedBase > 0 && ` · 정가 대비 ${won(t.saved)} 아낌`}
             </p>
           </div>

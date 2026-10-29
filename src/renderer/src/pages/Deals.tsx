@@ -1,10 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { dealVerdict, VERDICT_LABELS, type DealVerdict } from '@shared/analytics'
-import type { LowInfo, PriceInfo } from '@shared/types'
-import { Cover, PriceLine, VERDICT_TONE } from '@/components/game'
+import type { LowInfo, PriceInfo, ReviewInfo } from '@shared/types'
+import { Cover, LowLine, PriceLine, ReviewBadge, VERDICT_TONE } from '@/components/game'
 import { PageBody, TopBar } from '@/components/Shell'
-import { Badge, Empty, Segmented, Switch } from '@/components/ui'
-import { dateKo, usd, won } from '@/lib/format'
+import { Badge, Empty, Input, Segmented, Switch } from '@/components/ui'
+import { dateKo, parseWon, usd, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
 interface DealRow {
@@ -18,6 +18,8 @@ interface DealRow {
   verdict: DealVerdict
   owned: boolean
   addedAt: number | null
+  review: ReviewInfo | null
+  targetPrice: number | null
 }
 
 const VERDICT_ORDER: DealVerdict[] = ['lowest', 'near', 'wait', 'notOnSale', 'unknown']
@@ -39,7 +41,9 @@ export function Deals() {
         lowKr: w.lowKr,
         verdict: dealVerdict(w.priceKr, w.lowKr),
         owned: false,
-        addedAt: w.addedAt
+        addedAt: w.addedAt,
+        review: w.review,
+        targetPrice: w.targetPrice
       })),
     [wishlist]
   )
@@ -57,7 +61,9 @@ export function Deals() {
           lowKr: g.lowKr,
           verdict: dealVerdict(g.priceKr, g.lowKr),
           owned: true,
-          addedAt: null
+          addedAt: null,
+          review: g.review,
+          targetPrice: null
         })),
     [games]
   )
@@ -117,19 +123,16 @@ export function Deals() {
                     >
                       {r.name}
                     </button>
-                    <div className="mt-0.5 text-[12px] text-faint">
-                      {r.lowKr ? (
-                        <>
-                          역대 최저 {won(r.lowKr.amount)}
-                          {r.lowKr.date && ` (${dateKo(r.lowKr.date)})`}
-                          {aboveLow != null && aboveLow > 0.001 && ` · 최저가보다 ${(aboveLow * 100).toFixed(0)}% 비쌈`}
-                        </>
-                      ) : (
-                        '역대 최저가 정보 없음'
-                      )}
-                      {r.addedAt && ` · ${dateKo(r.addedAt)} 추가`}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-faint">
+                      <span>역대 최저</span>
+                      <LowLine low={r.lowKr} fmt={won} className="text-[12px]" />
+                      {r.lowKr?.date && r.lowKr.source !== 'estimate' && <span>({dateKo(r.lowKr.date)})</span>}
+                      {aboveLow != null && aboveLow > 0.001 && <span>· 지금은 최저가보다 {(aboveLow * 100).toFixed(0)}% 비쌈</span>}
+                      <ReviewBadge review={r.review} />
+                      {r.addedAt && <span>· {dateKo(r.addedAt)} 추가</span>}
                     </div>
                   </div>
+                  {tab === 'wish' && <TargetInput appid={r.appid} value={r.targetPrice} current={r.priceKr?.final ?? null} />}
                   <div className="text-right">
                     <PriceLine p={r.priceKr} className="text-[14px]" />
                     <div className="num text-[12px] text-faint">미국 {usd(r.priceUs?.final)}</div>
@@ -144,5 +147,33 @@ export function Deals() {
         )}
       </PageBody>
     </>
+  )
+}
+
+/** 목표가: 이 가격 이하가 되면 Windows 알림 */
+function TargetInput({ appid, value, current }: { appid: number; value: number | null; current: number | null }) {
+  const { reload, toast } = useStore()
+  const [v, setV] = useState(value != null ? String(value) : '')
+  useEffect(() => setV(value != null ? String(value) : ''), [value])
+  const reached = value != null && current != null && current <= value
+  return (
+    <label className="flex flex-col items-end gap-0.5">
+      <span className={reached ? 'text-[11px] font-semibold text-good' : 'text-[11px] text-faint'}>{reached ? '목표가 도달!' : '목표가'}</span>
+      <Input
+        className="num h-8 w-28 text-right text-[13px]"
+        inputMode="numeric"
+        placeholder="알림 받을 가격"
+        value={v ? Number(v).toLocaleString('ko-KR') : ''}
+        onChange={(e) => setV(String(parseWon(e.target.value) ?? ''))}
+        onBlur={async () => {
+          const n = v === '' ? null : Number(v)
+          if (n === value) return
+          await window.api.setTargetPrice(appid, n)
+          await reload()
+          if (n != null) toast(`₩${n.toLocaleString('ko-KR')} 이하가 되면 알려 드릴게요.`)
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+      />
+    </label>
   )
 }

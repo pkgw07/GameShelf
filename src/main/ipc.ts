@@ -1,13 +1,15 @@
 // 화면 → 메인 프로세스 요청 처리
 import { closeSync, copyFileSync, existsSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
-import { dirname, basename } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
 import { APP_VERSION, type BackupResult, type Settings } from '@shared/types'
 import type { Core } from './core'
 import type { Updater } from './updater'
 import { getPlayerSummary, resolveSteamId, storeSearch, toProfile } from './providers/steam'
-import { importLicenses, importPurchases } from './services/imports'
+import { applyPurchases, importLicenses, importPurchases } from './services/imports'
+import { recognize } from './services/ocr'
+import { yearReview } from './services/yearreview'
 import { libraryCsv } from './services/exporter'
 
 type Handlers = { [K in ApiMethod]: (...args: Parameters<GameShelfApi[K]>) => ReturnType<GameShelfApi[K]> | Awaited<ReturnType<GameShelfApi[K]>> }
@@ -15,6 +17,7 @@ type Handlers = { [K in ApiMethod]: (...args: Parameters<GameShelfApi[K]>) => Re
 export interface IpcHooks {
   onSettingsChanged(prev: Settings, next: Settings): void
   getWindow(): BrowserWindow | null
+  notify(title: string, body: string): void
 }
 
 function isSqliteFile(path: string): boolean {
@@ -65,6 +68,14 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
 
     getLibrary: () => repo.listGames(),
     getWishlist: () => repo.listWishlist(),
+    getDlcs: () => repo.listDlcs(),
+    setDlcOwned: (appid, owned) => repo.setDlcOwned(appid, owned, 'manual'),
+    setTargetPrice: (appid, price) => repo.setTargetPrice(appid, price),
+    getRareAchievements: (limit) => repo.rareAchievements(limit),
+    getYearReview: (year) => yearReview(repo, year),
+    ocrImage: (dataUrl) => recognize(dataUrl, join(app.getPath('userData'), 'ocr')),
+    applyPurchases: (items) => applyPurchases(repo, items),
+    testNotification: () => hooks.notify('GameShelf 알림 테스트', '위시리스트 게임이 목표가나 역대 최저가가 되면 이렇게 알려 드립니다.'),
     updateUserData: (key, patch) => {
       repo.patchUserData(key, patch)
       return repo.getGame(key)

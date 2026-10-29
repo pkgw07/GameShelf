@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { dealVerdict, VERDICT_LABELS, type DealVerdict } from '@shared/analytics'
-import { STATUS_LABELS, STATUS_ORDER, type GameStatus, type LowInfo, type PriceInfo } from '@shared/types'
+import { STATUS_LABELS, STATUS_ORDER, type GameStatus, type LowInfo, type PriceInfo, type ReviewInfo } from '@shared/types'
 import { cn } from '@/lib/cn'
 import { price } from '@/lib/format'
 import { Badge, type Tone } from './ui'
@@ -78,6 +78,31 @@ export function PriceLine({ p, className }: { p: PriceInfo | null; className?: s
       {p.discount > 0 && <span className="rounded bg-sale px-1 text-[11px] font-bold text-white dark:text-[#1a1300]">-{p.discount}%</span>}
       {p.discount > 0 && <span className="text-[12px] text-faint line-through">{price(p, 'initial')}</span>}
       <span className={cn('font-semibold', p.discount > 0 ? 'text-sale' : 'text-ink')}>{price(p)}</span>
+    </span>
+  )
+}
+
+/** Steam 평가: 긍정 비율에 따라 색을 다르게 */
+export function ReviewBadge({ review, compact }: { review: ReviewInfo | null; compact?: boolean }) {
+  if (!review || review.percent == null) return null
+  const p = review.percent
+  const tone = p >= 80 ? 'text-good' : p >= 70 ? 'text-brand' : p >= 40 ? 'text-sale' : 'text-bad'
+  return (
+    <span className={cn('num inline-flex items-center gap-1 text-[12px] whitespace-nowrap', tone)} title={`Steam 평가 ${review.count.toLocaleString()}개`}>
+      <span className="font-semibold">{p}%</span>
+      {!compact && review.label && <span className="text-muted">{review.label}</span>}
+    </span>
+  )
+}
+
+/** 역대 최저가 + 최대 할인율. 지금 할인 여부와 상관없이 같은 값 */
+export function LowLine({ low, fmt, showSource, className }: { low: LowInfo | null; fmt(v: number): string; showSource?: boolean; className?: string }) {
+  if (!low) return <span className={cn('text-faint', className)}>—</span>
+  return (
+    <span className={cn('num inline-flex items-baseline gap-1.5', className)}>
+      <span className="font-semibold text-good">{fmt(low.amount)}</span>
+      {low.cut > 0 && <span className="text-[12px] text-muted">최대 -{low.cut}%</span>}
+      {showSource && low.source === 'estimate' && <span className="text-[11px] text-faint">(미국 최대 할인율 기준)</span>}
     </span>
   )
 }

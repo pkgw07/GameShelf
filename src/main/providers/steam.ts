@@ -1,5 +1,5 @@
 // Steam Web API + Steam 상점 API
-import type { GenreRef, PriceInfo, ProfileInfo, Settings, StoreSearchResult } from '@shared/types'
+import type { GenreRef, PriceInfo, ProfileInfo, ReviewInfo, Settings, StoreSearchResult } from '@shared/types'
 import type { AchInput, OwnedGameInput, SteamAppInput } from '../db/repo'
 import { HttpError, limiters, request } from '../util/http'
 import type { PlatformProvider, ProviderContext } from './types'
@@ -181,6 +181,8 @@ interface AppDetailsData {
   genres?: { id: string; description: string }[]
   release_date?: { date?: string }
   price_overview?: PriceOverview
+  dlc?: number[]
+  fullgame?: { appid?: string | number }
 }
 
 /** 상세 정보 (한국 상점, 한국어). 한국 가격도 함께 돌려준다 */
@@ -207,7 +209,9 @@ export async function getAppDetails(
       isFree: Boolean(d.is_free),
       headerImage: d.header_image ?? null,
       genres,
-      releaseDate: d.release_date?.date ?? null
+      releaseDate: d.release_date?.date ?? null,
+      dlc: (d.dlc ?? []).map(Number).filter((x) => Number.isFinite(x)),
+      parentAppid: d.fullgame?.appid != null ? Number(d.fullgame.appid) : null
     },
     priceKr: parsePriceOverview(d.price_overview)
   }
@@ -257,6 +261,72 @@ export async function storeSearch(term: string): Promise<StoreSearchResult[]> {
       }
       return { appid: x.id, name: x.name, image: x.tiny_image ?? '', priceKr }
     })
+}
+
+// ───────── 이름·평가 일괄 조회 (IStoreBrowseService/GetItems, 최대 200개씩) ─────────
+
+export interface StoreItemInfo {
+  appid: number
+  name: string | null
+  isFree: boolean
+  parentAppid: number | null
+  review: ReviewInfo | null
+}
+
+export async function getStoreItems(appids: number[], signal?: AbortSignal): Promise<Map<number, StoreItemInfo>> {
+  const out = new Map<number, StoreItemInfo>()
+  for (let i = 0; i < appids.length; i += 200) {
+    const part = appids.slice(i, i + 200)
+    const input = {
+      ids: part.map((appid) => ({ appid })),
+      context: { language: 'koreana', country_code: 'KR', steam_realm: 1 },
+      data_request: { include_basic_info: true, include_reviews: true }
+    }
+    const r = await request<{
+      response?: {
+        store_items?: {
+          id?: number
+          appid?: number
+          success?: number
+          name?: string
+          is_free?: boolean
+          related_items?: { parent_appid?: number }
+          reviews?: { summary_filtered?: { review_count?: number; percent_positive?: number; review_score_label?: string } }
+        }[]
+      }
+    }>(`${API}/IStoreBrowseService/GetItems/v1/?input_json=${encodeURIComponent(JSON.stringify(input))}`, {
+      limiter: limiters.steamApi,
+      signal,
+      timeoutMs: 30_000
+    })
+    for (const it of r?.response?.store_items ?? []) {
+      const appid = Number(it.appid ?? it.id)
+      if (!appid || it.success !== 1) continue
+      const sum = it.reviews?.summary_filtered
+      out.set(appid, {
+        appid,
+        name: it.name ?? null,
+        isFree: Boolean(it.is_free),
+        parentAppid: it.related_items?.parent_appid ?? null,
+        review:
+          sum && (sum.review_count ?? 0) > 0
+            ? { percent: sum.percent_positive ?? null, count: sum.review_count ?? 0, label: sum.review_score_label ?? null }
+            : null
+      })
+    }
+  }
+  return out
+}
+
+/** 한 게임의 평가 (GetItems가 실패했을 때 대비) */
+export async function getAppReview(appid: number): Promise<ReviewInfo | null> {
+  const r = await request<{ query_summary?: { total_positive?: number; total_reviews?: number; review_score_desc?: string } }>(
+    `${STORE}/appreviews/${appid}?json=1&language=all&purchase_type=all&num_per_page=0&l=koreana`,
+    { limiter: limiters.steamStore, retries: 1 }
+  )
+  const q = r?.query_summary
+  if (!q || !q.total_reviews) return null
+  return { percent: Math.round(((q.total_positive ?? 0) / q.total_reviews) * 100), count: q.total_reviews, label: q.review_score_desc ?? null }
 }
 
 // ───────── 위시리스트 ─────────

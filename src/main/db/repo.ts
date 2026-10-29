@@ -1,6 +1,7 @@
 import type { Db } from './driver'
 import type {
   AchievementRow,
+  DlcRow,
   GameRow,
   GameStatus,
   GenreRef,
@@ -11,6 +12,8 @@ import type {
   PriceInfo,
   PricePoint,
   PurchaseRecord,
+  RareAchievement,
+  ReviewInfo,
   UserDataPatch,
   WishlistRow
 } from '@shared/types'
@@ -47,6 +50,8 @@ export interface SteamAppInput {
   headerImage?: string | null
   genres?: GenreRef[]
   releaseDate?: string | null
+  dlc?: number[]
+  parentAppid?: number | null
 }
 
 export interface AchInput {
@@ -136,8 +141,8 @@ export class Repo {
   upsertSteamApp(a: SteamAppInput, now = Date.now()): void {
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO steam_app(appid, type, name, name_ko, is_free, header_image, genres, release_date, status, fetched_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO steam_app(appid, type, name, name_ko, is_free, header_image, genres, release_date, status, fetched_at, dlc, parent_appid)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         a.appid,
@@ -149,7 +154,9 @@ export class Repo {
         JSON.stringify(a.genres ?? []),
         a.releaseDate ?? null,
         a.status,
-        now
+        now,
+        JSON.stringify(a.dlc ?? []),
+        a.parentAppid ?? null
       )
   }
 
@@ -262,7 +269,179 @@ export class Repo {
   }
 
   effectiveLow(appid: number, region: 'kr' | 'us'): LowInfo | null {
-    return effectiveLow(this.getItadLow(appid, region), this.getPrice(appid, region), this.selfLow(appid, region))
+    const other = this.getItadLow(appid, region === 'kr' ? 'us' : 'kr')
+    return effectiveLow(this.getItadLow(appid, region), this.getPrice(appid, region), this.selfLow(appid, region), other?.cut ?? null)
+  }
+
+  // ───────── DLC / 평가 / 목표가 ─────────
+  /** 보유 게임들의 DLC appid 목록 (부모 appid 포함) */
+  ownedGamesDlc(): { parent: number; dlc: number }[] {
+    const out: { parent: number; dlc: number }[] = []
+    const rows = this.db
+      .prepare(
+        `SELECT a.appid, a.dlc FROM steam_app a JOIN games g ON g.platform = 'steam' AND CAST(g.game_id AS INTEGER) = a.appid
+         WHERE g.owned = 1 AND a.dlc IS NOT NULL AND a.dlc != '[]'`
+      )
+      .all<Row>()
+    for (const r of rows) for (const d of JSON.parse(String(r.dlc)) as number[]) out.push({ parent: Number(r.appid), dlc: d })
+    return out
+  }
+
+  appidsWithoutApp(appids: number[]): number[] {
+    const st = this.db.prepare('SELECT 1 AS x FROM steam_app WHERE appid = ?')
+    return appids.filter((id) => !st.get(id))
+  }
+
+  /** GetItems 로 받은 DLC 기본 정보 저장 (상세 정보를 따로 받지 않는 DLC용) */
+  saveDlcBasic(appid: number, parent: number, name: string | null, isFree: boolean, now = Date.now()): void {
+    const cur = this.db.prepare('SELECT status FROM steam_app WHERE appid = ?').get<Row>(appid)
+    if (cur && cur.status === 'ok') {
+      this.db.prepare('UPDATE steam_app SET name_ko = COALESCE(?, name_ko), parent_appid = ? WHERE appid = ?').run(name, parent, appid)
+      return
+    }
+    this.upsertSteamApp({ appid, status: 'ok', type: 'dlc', nameKo: name, isFree, parentAppid: parent, genres: [] }, now)
+  }
+
+  saveReview(appid: number, r: ReviewInfo, now = Date.now()): void {
+    this.db
+      .prepare('INSERT OR REPLACE INTO steam_reviews(appid, percent, count, label, fetched_at) VALUES (?, ?, ?, ?, ?)')
+      .run(appid, r.percent, r.count, r.label, now)
+  }
+
+  appidsNeedingReviews(appids: number[], maxAgeMs: number, now = Date.now()): number[] {
+    const st = this.db.prepare('SELECT fetched_at FROM steam_reviews WHERE appid = ?')
+    return appids.filter((id) => {
+      const r = st.get<Row>(id)
+      return !r || now - Number(r.fetched_at) > maxAgeMs
+    })
+  }
+
+  getReview(appid: number): ReviewInfo | null {
+    const r = this.db.prepare('SELECT * FROM steam_reviews WHERE appid = ?').get<Row>(appid)
+    return r && Number(r.count) > 0 ? { percent: num(r.percent), count: Number(r.count), label: str(r.label) } : null
+  }
+
+  setDlcOwned(appid: number, owned: boolean, source: 'manual' | 'license' | 'purchase'): void {
+    // 직접 해제한 DLC는 가져오기가 다시 보유로 바꾸지 않는다
+    if (source !== 'manual') {
+      const cur = this.db.prepare('SELECT owned, source FROM dlc_owned WHERE appid = ?').get<Row>(appid)
+      if (cur && cur.source === 'manual') return
+    }
+    this.db
+      .prepare('INSERT OR REPLACE INTO dlc_owned(appid, owned, source, updated_at) VALUES (?, ?, ?, ?)')
+      .run(appid, owned, source, Date.now())
+  }
+
+  ownedDlcAppids(): number[] {
+    return this.db.prepare('SELECT appid FROM dlc_owned WHERE owned = 1').all<Row>().map((r) => Number(r.appid))
+  }
+
+  setTargetPrice(appid: number, price: number | null): void {
+    this.db
+      .prepare(
+        `INSERT INTO wish_user(appid, target_price) VALUES (?, ?)
+         ON CONFLICT(appid) DO UPDATE SET target_price = excluded.target_price, notified_target_price = NULL`
+      )
+      .run(appid, price)
+  }
+
+  wishUser(appid: number): { target: number | null; notifiedTarget: number | null; notifiedLow: number | null } {
+    const r = this.db.prepare('SELECT * FROM wish_user WHERE appid = ?').get<Row>(appid)
+    return { target: num(r?.target_price), notifiedTarget: num(r?.notified_target_price), notifiedLow: num(r?.notified_low_price) }
+  }
+
+  markNotified(appid: number, kind: 'target' | 'low', price: number | null): void {
+    this.db.prepare('INSERT OR IGNORE INTO wish_user(appid) VALUES (?)').run(appid)
+    this.db
+      .prepare(`UPDATE wish_user SET ${kind === 'target' ? 'notified_target_price' : 'notified_low_price'} = ? WHERE appid = ?`)
+      .run(price, appid)
+  }
+
+  /** 전체 유저 달성률을 받을 게임 (달성한 도전과제가 있고, 30일 넘게 안 받은 게임) */
+  appidsNeedingGlobalPct(maxAgeMs: number, now = Date.now()): number[] {
+    return this.db
+      .prepare(`SELECT appid FROM steam_ach_summary WHERE done > 0 AND (pct_fetched_at IS NULL OR pct_fetched_at < ?)`)
+      .all<Row>(now - maxAgeMs)
+      .map((r) => Number(r.appid))
+  }
+
+  markGlobalPctFetched(appid: number, now = Date.now()): void {
+    this.db.prepare('UPDATE steam_ach_summary SET pct_fetched_at = ? WHERE appid = ?').run(now, appid)
+  }
+
+  rareAchievements(limit: number): RareAchievement[] {
+    const names = new Map(this.listGamesLite().map((g) => [g.appid, g.name]))
+    return this.db
+      .prepare(
+        `SELECT appid, apiname, name, description, icon, global_pct, unlock_time FROM steam_ach
+         WHERE achieved = 1 AND global_pct IS NOT NULL ORDER BY global_pct ASC LIMIT ?`
+      )
+      .all<Row>(limit)
+      .map((r) => ({
+        key: keyOf('steam', Number(r.appid)),
+        gameName: names.get(Number(r.appid)) ?? `App ${r.appid}`,
+        apiname: String(r.apiname),
+        name: String(r.name ?? r.apiname),
+        description: String(r.description ?? ''),
+        icon: String(r.icon ?? ''),
+        globalPct: Number(r.global_pct),
+        unlockTime: num(r.unlock_time) || null
+      }))
+  }
+
+  /** 이름만 필요할 때 쓰는 가벼운 목록 */
+  listGamesLite(): { key: string; appid: number | null; name: string }[] {
+    return this.db
+      .prepare(
+        `SELECT g.platform, g.game_id, g.name, a.name_ko FROM games g
+         LEFT JOIN steam_app a ON g.platform = 'steam' AND a.appid = CAST(g.game_id AS INTEGER) WHERE g.owned = 1`
+      )
+      .all<Row>()
+      .map((r) => ({
+        key: keyOf(r.platform as Platform, String(r.game_id)),
+        appid: r.platform === 'steam' ? Number(r.game_id) : null,
+        name: String(r.name_ko || r.name)
+      }))
+  }
+
+  /** 보유 게임의 DLC 목록. parentKey 를 주면 그 게임 것만 */
+  listDlcs(parentKey?: string): DlcRow[] {
+    const pc = new PriceContext(this)
+    const parents = new Map(this.listGamesLite().map((g) => [g.appid, g]))
+    const users = new Map<number, Row>()
+    for (const r of this.db.prepare(`SELECT * FROM user_data WHERE platform = 'steam'`).all<Row>()) users.set(Number(r.game_id), r)
+    const owned = new Map<number, Row>()
+    for (const r of this.db.prepare('SELECT * FROM dlc_owned').all<Row>()) owned.set(Number(r.appid), r)
+    const wantParent = parentKey ? parseKey(parentKey).appid : null
+    const out: DlcRow[] = []
+    for (const { parent, dlc } of this.ownedGamesDlc()) {
+      if (wantParent != null && parent !== wantParent) continue
+      const p = parents.get(parent)
+      if (!p) continue
+      const app = this.getSteamApp(dlc)
+      const u = users.get(dlc)
+      const o = owned.get(dlc)
+      const { priceKr, priceUs, lowKr, lowUs } = pc.prices(dlc)
+      out.push({
+        appid: dlc,
+        key: keyOf('steam', dlc),
+        parentKey: p.key,
+        parentName: p.name,
+        name: app?.nameKo || app?.name || `DLC ${dlc}`,
+        headerImage: app?.headerImage || steamHeader(dlc),
+        priceKr,
+        priceUs,
+        lowKr,
+        lowUs,
+        review: pc.review(dlc),
+        isFree: Boolean(app?.isFree),
+        owned: Boolean(o?.owned),
+        ownedSource: (str(o?.source) as DlcRow['ownedSource']) ?? null,
+        purchasePrice: num(u?.purchase_price),
+        purchaseDate: str(u?.purchase_date)
+      })
+    }
+    return out
   }
 
   getItadId(appid: number): { itadId: string | null; fetchedAt: number } | null {
@@ -551,6 +730,7 @@ export class Repo {
 
   listWishlist(): WishlistRow[] {
     const rows = this.db.prepare('SELECT * FROM wishlist WHERE active = 1 ORDER BY priority, added_at DESC').all<Row>()
+    const pc = new PriceContext(this)
     return rows.map((r) => {
       const appid = Number(r.appid)
       const app = this.getSteamApp(appid)
@@ -562,11 +742,10 @@ export class Repo {
         priority: Number(r.priority),
         headerImage: app?.headerImage || steamHeader(appid),
         genres: app?.genres ?? [],
-        priceKr: this.getPrice(appid, 'kr'),
-        priceUs: this.getPrice(appid, 'us'),
-        lowKr: this.effectiveLow(appid, 'kr'),
-        lowUs: this.effectiveLow(appid, 'us'),
-        detailsStatus: (app?.status as WishlistRow['detailsStatus']) ?? 'pending'
+        ...pc.prices(appid),
+        detailsStatus: (app?.status as WishlistRow['detailsStatus']) ?? 'pending',
+        review: pc.review(appid),
+        targetPrice: this.wishUser(appid).target
       }
     })
   }
@@ -627,28 +806,12 @@ export class Repo {
     for (const r of this.db.prepare('SELECT * FROM hltb').all<Row>()) hltbMap.set(keyOf(r.platform as Platform, String(r.game_id)), r)
     const appMap = new Map<number, Row>()
     for (const r of this.db.prepare('SELECT * FROM steam_app').all<Row>()) appMap.set(Number(r.appid), r)
-    const priceMap = new Map<string, PriceInfo>()
-    for (const r of this.db.prepare('SELECT * FROM steam_price').all<Row>()) priceMap.set(`${r.appid}:${r.region}`, rowToPrice(r))
-    const itadLowMap = new Map<string, LowInfo>()
-    for (const r of this.db.prepare('SELECT * FROM steam_low').all<Row>()) itadLowMap.set(`${r.appid}:${r.region}`, rowToLow(r))
-    const selfLowMap = new Map<string, LowInfo>()
-    for (const r of this.db
-      .prepare(
-        `SELECT h.appid, h.region, h.initial, h.final, h.discount, h.recorded_at FROM steam_price_history h
-         JOIN (SELECT appid, region, MIN(final) AS mf FROM steam_price_history WHERE final > 0 GROUP BY appid, region) m
-           ON m.appid = h.appid AND m.region = h.region AND m.mf = h.final`
-      )
-      .all<Row>()) {
-      const k = `${r.appid}:${r.region}`
-      if (selfLowMap.has(k)) continue
-      selfLowMap.set(k, {
-        amount: Number(r.final),
-        regular: Number(r.initial),
-        cut: Number(r.discount),
-        date: new Date(Number(r.recorded_at)).toISOString(),
-        source: 'self'
-      })
-    }
+    const pc = new PriceContext(this)
+    const dlcCount = new Map<number, number>()
+    for (const d of this.ownedGamesDlc()) dlcCount.set(d.parent, (dlcCount.get(d.parent) ?? 0) + 1)
+    const dlcOwned = new Map<number, number>()
+    const ownedSet = new Set(this.ownedDlcAppids())
+    for (const d of this.ownedGamesDlc()) if (ownedSet.has(d.dlc)) dlcOwned.set(d.parent, (dlcOwned.get(d.parent) ?? 0) + 1)
     const achMap = new Map<number, Row>()
     for (const r of this.db.prepare('SELECT * FROM steam_ach_summary').all<Row>()) achMap.set(Number(r.appid), r)
     const wish = new Set(this.wishlistAppids())
@@ -660,8 +823,7 @@ export class Repo {
       const appid = platform === 'steam' ? Number(gameId) : null
       const u = userMap.get(key)
       const app = appid != null ? appMap.get(appid) : undefined
-      const pk = appid != null ? priceMap.get(`${appid}:kr`) ?? null : null
-      const pu = appid != null ? priceMap.get(`${appid}:us`) ?? null : null
+      const pr = appid != null ? pc.prices(appid) : { priceKr: null, priceUs: null, lowKr: null, lowUs: null }
       const ach = appid != null ? achMap.get(appid) : undefined
       const h = hltbMap.get(key)
       const manualMain = num(u?.hltb_main_manual)
@@ -685,10 +847,7 @@ export class Repo {
         genres: app ? (JSON.parse(String(app.genres)) as GenreRef[]) : [],
         isFree: Boolean(app?.is_free),
         detailsStatus: (app?.status as GameRow['detailsStatus']) ?? 'pending',
-        priceKr: pk,
-        priceUs: pu,
-        lowKr: appid != null ? effectiveLow(itadLowMap.get(`${appid}:kr`) ?? null, pk, selfLowMap.get(`${appid}:kr`) ?? null) : null,
-        lowUs: appid != null ? effectiveLow(itadLowMap.get(`${appid}:us`) ?? null, pu, selfLowMap.get(`${appid}:us`) ?? null) : null,
+        ...pr,
         achTotal: ach ? Number(ach.total) : null,
         achDone: ach ? Number(ach.done) : null,
         status: ((u?.status as GameStatus) ?? 'none') as GameStatus,
@@ -702,7 +861,10 @@ export class Repo {
         rating: num(u?.rating),
         hltb,
         inWishlist: appid != null && wish.has(appid),
-        firstSeen: Number(g.first_seen)
+        firstSeen: Number(g.first_seen),
+        review: appid != null ? pc.review(appid) : null,
+        dlcCount: appid != null ? dlcCount.get(appid) ?? 0 : 0,
+        dlcOwned: appid != null ? dlcOwned.get(appid) ?? 0 : 0
       }
     })
   }
@@ -714,6 +876,56 @@ export class Repo {
   gameName(key: string): string | null {
     const { platform, gameId } = parseKey(key)
     return str(this.db.prepare('SELECT name FROM games WHERE platform = ? AND game_id = ?').get<Row>(platform, gameId)?.name)
+  }
+}
+
+/** 여러 게임의 가격·최저가·평가를 한 번에 계산하기 위해 테이블을 미리 읽어 둔다 */
+class PriceContext {
+  private price = new Map<string, PriceInfo>()
+  private itad = new Map<string, LowInfo>()
+  private self = new Map<string, LowInfo>()
+  private reviews = new Map<number, ReviewInfo>()
+
+  constructor(repo: Repo) {
+    const db = repo.db
+    for (const r of db.prepare('SELECT * FROM steam_price').all<Row>()) this.price.set(`${r.appid}:${r.region}`, rowToPrice(r))
+    for (const r of db.prepare('SELECT * FROM steam_low').all<Row>()) this.itad.set(`${r.appid}:${r.region}`, rowToLow(r))
+    for (const r of db
+      .prepare(
+        `SELECT h.appid, h.region, h.initial, h.final, h.discount, h.recorded_at FROM steam_price_history h
+         JOIN (SELECT appid, region, MIN(final) AS mf FROM steam_price_history WHERE final > 0 GROUP BY appid, region) m
+           ON m.appid = h.appid AND m.region = h.region AND m.mf = h.final`
+      )
+      .all<Row>()) {
+      const k = `${r.appid}:${r.region}`
+      if (this.self.has(k)) continue
+      this.self.set(k, {
+        amount: Number(r.final),
+        regular: Number(r.initial),
+        cut: Number(r.discount),
+        date: new Date(Number(r.recorded_at)).toISOString(),
+        source: 'self'
+      })
+    }
+    for (const r of db.prepare('SELECT * FROM steam_reviews WHERE count > 0').all<Row>())
+      this.reviews.set(Number(r.appid), { percent: num(r.percent), count: Number(r.count), label: str(r.label) })
+  }
+
+  prices(appid: number) {
+    const priceKr = this.price.get(`${appid}:kr`) ?? null
+    const priceUs = this.price.get(`${appid}:us`) ?? null
+    const itadKr = this.itad.get(`${appid}:kr`) ?? null
+    const itadUs = this.itad.get(`${appid}:us`) ?? null
+    return {
+      priceKr,
+      priceUs,
+      lowKr: effectiveLow(itadKr, priceKr, this.self.get(`${appid}:kr`) ?? null, itadUs?.cut ?? null),
+      lowUs: effectiveLow(itadUs, priceUs, this.self.get(`${appid}:us`) ?? null, itadKr?.cut ?? null)
+    }
+  }
+
+  review(appid: number): ReviewInfo | null {
+    return this.reviews.get(appid) ?? null
   }
 }
 

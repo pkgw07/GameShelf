@@ -5,7 +5,7 @@ import type { Settings, SyncState } from '@shared/types'
 import type { Repo } from '../db/repo'
 import { keyOf } from '../db/repo'
 import { providers } from '../providers'
-import { getAchievements, getAppDetails, getOwnedGames, getPricesBatch, getWishlist } from '../providers/steam'
+import { getAchievements, getAppDetails, getGlobalAchievementPct, getOwnedGames, getPricesBatch, getStoreItems, getWishlist } from '../providers/steam'
 import { chunk, mapLimit } from '../util/http'
 import { recordDate } from '../util/time'
 import { applyAutoStatus } from './autostatus'
@@ -13,6 +13,10 @@ import { lookupSteamIds, steamStoreLows } from './itad'
 
 const DETAILS_MAX_AGE = 30 * 86_400_000
 const ITAD_MAP_MAX_AGE = 30 * 86_400_000
+const REVIEW_MAX_AGE = 7 * 86_400_000
+const GLOBAL_PCT_MAX_AGE = 30 * 86_400_000
+
+export type Notify = (title: string, body: string, appid?: number) => void
 
 export type SyncKind = 'full' | 'daily'
 
@@ -24,7 +28,8 @@ export class SyncService {
     private repo: Repo,
     private getSettings: () => Settings,
     private emit: (s: SyncState) => void,
-    private dataChanged: () => void
+    private dataChanged: () => void,
+    private notify: Notify = () => {}
   ) {
     const last = repo.getMeta('last_sync_at')
     const daily = repo.getMeta('last_daily_at')
@@ -130,13 +135,42 @@ export class SyncService {
       }
       this.dataChanged()
 
-      // 5) 가격 (한국 + 미국) - 바뀐 경우만 이력에 남는다
-      const parts = chunk(all, 50)
+      // 4-2) DLC 이름과 Steam 평가 (200개씩 한 번에)
+      const dlcPairs = this.repo.ownedGamesDlc()
+      const dlcParent = new Map(dlcPairs.map((d) => [d.dlc, d.parent]))
+      const dlcIds = [...dlcParent.keys()]
+      const ownedDlc = new Set(this.repo.ownedDlcAppids())
+      const itemTargets = [
+        ...new Set([...this.repo.appidsNeedingReviews([...all, ...dlcIds], REVIEW_MAX_AGE), ...this.repo.appidsWithoutApp(dlcIds)])
+      ]
+      if (itemTargets.length) {
+        this.progress('reviews', 'DLC 정보와 Steam 평가 불러오는 중', 0, itemTargets.length)
+        try {
+          const items = await getStoreItems(itemTargets, signal)
+          this.repo.db.tx(() => {
+            for (const id of itemTargets) {
+              const it = items.get(id)
+              const parent = dlcParent.get(id)
+              if (parent != null && it) this.repo.saveDlcBasic(id, parent, it.name, it.isFree)
+              this.repo.saveReview(id, it?.review ?? { percent: null, count: 0, label: null })
+            }
+          })
+        } catch (e) {
+          warn('DLC·평가', e)
+        }
+        this.dataChanged()
+      }
+
+      // 5) 가격 (한국 + 미국) - 바뀐 경우만 이력에 남는다. DLC는 한국 가격, 보유 DLC는 미국 가격도
+      const krTargets = [...new Set([...all, ...dlcIds])]
+      const usTargets = [...new Set([...all, ...dlcIds.filter((d) => ownedDlc.has(d))])]
+      const regionParts = { kr: chunk(krTargets, 50), us: chunk(usTargets, 50) }
+      const totalParts = regionParts.kr.length + regionParts.us.length
       let done = 0
       for (const region of ['kr', 'us'] as const) {
-        for (const part of parts) {
+        for (const part of regionParts[region]) {
           if (signal.aborted) throw new Error('취소됨')
-          this.progress('prices', region === 'kr' ? '한국 가격 확인 중' : '미국 가격 확인 중', ++done, parts.length * 2)
+          this.progress('prices', region === 'kr' ? '한국 가격 확인 중' : '미국 가격 확인 중', ++done, totalParts)
           try {
             const prices = await getPricesBatch(part, region, signal)
             this.repo.db.tx(() => {
@@ -150,10 +184,17 @@ export class SyncService {
       this.repo.setMeta('last_price_record', String(Date.now()))
       this.dataChanged()
 
+      // 5-2) 위시리스트 목표가·역대 최저가 알림
+      try {
+        this.checkWishlistAlerts(s)
+      } catch (e) {
+        warn('알림', e)
+      }
+
       // 6) 역대 최저가 (IsThereAnyDeal)
       if (s.itadApiKey) {
         try {
-          await this.syncItad(s.itadApiKey, all, signal)
+          await this.syncItad(s.itadApiKey, [...all, ...ownedDlc], signal)
         } catch (e) {
           warn('역대 최저가(ITAD)', e)
         }
@@ -178,6 +219,20 @@ export class SyncService {
       })
       if (signal.aborted) throw new Error('취소됨')
 
+      // 7-2) 도전과제 전체 유저 달성률 (희귀 도전과제 모음용, 30일마다)
+      const pctTargets = this.repo.appidsNeedingGlobalPct(GLOBAL_PCT_MAX_AGE).slice(0, 150)
+      let pi = 0
+      for (const appid of pctTargets) {
+        if (signal.aborted) throw new Error('취소됨')
+        this.progress('rarity', '도전과제 희귀도 확인 중', ++pi, pctTargets.length)
+        try {
+          this.repo.setGlobalPct(appid, await getGlobalAchievementPct(appid))
+          this.repo.markGlobalPctFetched(appid)
+        } catch (e) {
+          warn(`희귀도(${appid})`, e)
+        }
+      }
+
       // 8) 상태 태그 자동 제안
       if (s.autoStatus) applyAutoStatus(this.repo, this.repo.listGames())
 
@@ -193,6 +248,30 @@ export class SyncService {
       this.ctrl = null
       this.set({ running: false, phase: 'idle', label: '', current: 0, total: 0, warnings })
       this.dataChanged()
+    }
+  }
+
+  /** 위시리스트가 목표가 이하이거나 역대 최저가가 되면 Windows 알림 (같은 가격으로는 한 번만) */
+  checkWishlistAlerts(s: Settings): void {
+    for (const w of this.repo.listWishlist()) {
+      const p = w.priceKr
+      const state = this.repo.wishUser(w.appid)
+      if (!p) continue
+      if (p.discount === 0) {
+        if (state.notifiedLow != null) this.repo.markNotified(w.appid, 'low', null)
+      }
+      if (s.notifyTargetPrice && state.target != null) {
+        if (p.final <= state.target && state.notifiedTarget !== p.final) {
+          this.notify('목표가 도달', `${w.name}: ₩${p.final.toLocaleString('ko-KR')} (목표 ₩${state.target.toLocaleString('ko-KR')})`, w.appid)
+          this.repo.markNotified(w.appid, 'target', p.final)
+        } else if (p.final > state.target && state.notifiedTarget != null) {
+          this.repo.markNotified(w.appid, 'target', null)
+        }
+      }
+      if (s.notifyHistoricalLow && p.discount > 0 && w.lowKr && p.final <= w.lowKr.amount && state.notifiedLow !== p.final) {
+        this.notify('역대 최저가', `${w.name}: ₩${p.final.toLocaleString('ko-KR')} (-${p.discount}%)`, w.appid)
+        this.repo.markNotified(w.appid, 'low', p.final)
+      }
     }
   }
 

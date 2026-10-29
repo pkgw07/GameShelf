@@ -3,6 +3,7 @@ import { LuFileUp } from 'react-icons/lu'
 import { costPerHour, moneyTotals, purchaseTiming, regionRatio, spendBy, TIMING_LABELS, type TimingGrade } from '@shared/analytics'
 import type { GameRow, ImportResult } from '@shared/types'
 import { Columns } from '@/components/charts'
+import { PasteImport } from '@/components/PasteImport'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Panel, Segmented, Stat } from '@/components/ui'
 import { cn } from '@/lib/cn'
@@ -19,13 +20,13 @@ const GRADE_TONE: Record<TimingGrade, 'good' | 'sale' | 'bad' | 'muted'> = {
 }
 
 export function Money() {
-  const { included, games, settings, openGame } = useStore()
+  const { included, priced, ownedDlcs, games, settings, openGame } = useStore()
   const [unit, setUnit] = useState<'year' | 'month'>('year')
-  const t = useMemo(() => moneyTotals(included), [included])
+  const t = useMemo(() => moneyTotals(priced), [priced])
   const spend = useMemo(() => {
-    const s = spendBy(included, unit)
+    const s = spendBy([...included, ...ownedDlcs], unit)
     return unit === 'month' ? s.slice(-24) : s
-  }, [included, unit])
+  }, [included, ownedDlcs, unit])
 
   const cph = useMemo(() => {
     const list = included.map((g) => ({ g, v: costPerHour(g) })).filter((x): x is { g: GameRow; v: number } => x.v != null)
@@ -57,7 +58,7 @@ export function Money() {
         <div className="grid grid-cols-4 gap-5 rounded-2xl border border-line bg-surface px-6 py-5">
           <Stat label="정가 총합" value={won(t.regularKr)} sub={`미국 정가 ${usd(t.regularUs)}`} />
           <Stat label="현재가 총합" value={won(t.currentKr)} sub={`할인 중 ${t.onSale}개 · 미국 ${usd(t.currentUs)}`} tone={t.onSale ? 'sale' : undefined} />
-          <Stat label="Steam 역대 최저가 총합" value={won(t.lowKr)} sub={`정가의 ${pct(t.lowKr / Math.max(1, t.regularKr))} · 미국 ${usd(t.lowUs)}`} tone="good" />
+          <Stat label="Steam 역대 최저가 총합" value={won(t.lowKr)} sub={`최대 할인율 기준 · 정가의 ${pct(t.lowKr / Math.max(1, t.regularKr))} · 미국 ${usd(t.lowUs)}`} tone="good" />
           <Stat
             label="실제 지출"
             value={t.spentCount ? won(t.spent) : '—'}
@@ -65,7 +66,7 @@ export function Money() {
           />
         </div>
         <p className="-mt-2 text-[12px] text-faint">
-          무료·제외 게임은 빠지고, 가격이 있는 {t.pricedKr}개 게임 기준입니다. 역대 최저가가 없는 게임은 현재가로 계산합니다.
+          무료·제외 게임은 빠지고, 가격이 있는 {t.pricedKr}개 기준입니다{settings?.includeDlcInTotals && ownedDlcs.length ? ` (보유 DLC ${ownedDlcs.length}개 포함)` : ''}. 역대 최저가는 각 게임이 역대 최대 할인율로 팔렸던 가격이며, 지금 할인 중인지와 상관없습니다. 한국 기록이 없는 게임은 미국에서 기록된 최대 할인율을 한국 정가에 적용해 계산합니다.
         </p>
 
         <div className="grid grid-cols-[3fr_2fr] gap-5">
@@ -204,6 +205,7 @@ function ImportPanel() {
   const [result, setResult] = useState<ImportResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [assigned, setAssigned] = useState<Set<number>>(new Set())
+  const [tab, setTab] = useState<'page' | 'text' | 'image'>('page')
 
   const pick = async () => {
     setBusy(true)
@@ -234,13 +236,29 @@ function ImportPanel() {
 
   return (
     <Panel
-      title="구매 내역 가져오기"
+      title="구매가 가져오기"
       action={
+        <Segmented<'page' | 'text' | 'image'>
+          size="sm"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'page', label: '저장한 Steam 페이지' },
+            { value: 'text', label: '표·텍스트 붙여넣기' },
+            { value: 'image', label: '캡처 이미지' }
+          ]}
+        />
+      }
+    >
+      {tab !== 'page' ? (
+        <PasteImport key={tab} mode={tab} />
+      ) : (
+      <>
+      <div className="mb-3">
         <Button variant="primary" icon={<LuFileUp />} disabled={busy} onClick={() => void pick()}>
           저장한 페이지 열기
         </Button>
-      }
-    >
+      </div>
       <ol className="max-w-[72ch] list-decimal space-y-1 pl-5 text-[13px] text-muted">
         <li>
           브라우저에서 Steam에 로그인한 뒤{' '}
@@ -301,6 +319,8 @@ function ImportPanel() {
             </>
           )}
         </div>
+      )}
+      </>
       )}
     </Panel>
   )

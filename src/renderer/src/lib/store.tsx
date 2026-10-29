@@ -1,8 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { excludeReason, type ExcludeReason } from '@shared/analytics'
-import type { GameRow, NowPlaying, ProfileInfo, Settings, SyncState, UpdateState, UserDataPatch, WishlistRow } from '@shared/types'
+import type { DlcRow, GameRow, NowPlaying, ProfileInfo, Settings, SyncState, UpdateState, UserDataPatch, WishlistRow } from '@shared/types'
+import type { PricedItem } from '@shared/analytics'
 
-export type Page = 'dashboard' | 'library' | 'money' | 'deals' | 'search' | 'recommend' | 'activity' | 'settings'
+export type Page =
+  | 'dashboard'
+  | 'library'
+  | 'backlog'
+  | 'money'
+  | 'deals'
+  | 'search'
+  | 'recommend'
+  | 'achievements'
+  | 'activity'
+  | 'yearly'
+  | 'settings'
 
 export interface Toast {
   id: number
@@ -23,6 +35,10 @@ interface Store {
   included: GameRow[]
   excludeOf(g: GameRow): ExcludeReason | null
   wishlist: WishlistRow[]
+  dlcs: DlcRow[]
+  /** 가격 총합에 쓰는 항목: 통계 포함 게임 + (설정 시) 보유 DLC */
+  priced: PricedItem[]
+  ownedDlcs: DlcRow[]
   sync: SyncState | null
   nowPlaying: NowPlaying | null
   update: UpdateState | null
@@ -62,6 +78,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<ProfileInfo | null>(null)
   const [games, setGames] = useState<GameRow[]>([])
   const [wishlist, setWishlist] = useState<WishlistRow[]>([])
+  const [dlcs, setDlcs] = useState<DlcRow[]>([])
   const [sync, setSync] = useState<SyncState | null>(null)
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
@@ -77,9 +94,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const reload = useCallback(async () => {
-    const [g, w] = await Promise.all([api.getLibrary(), api.getWishlist()])
+    const [g, w, d] = await Promise.all([api.getLibrary(), api.getWishlist(), api.getDlcs()])
     setGames(g)
     setWishlist(w)
+    setDlcs(d)
   }, [api])
 
   useEffect(() => {
@@ -139,6 +157,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const excludeOf = useCallback((g: GameRow) => (settings ? excludeReason(g, settings) : null), [settings])
   const included = useMemo(() => games.filter((g) => !excludeOf(g)), [games, excludeOf])
+  const ownedDlcs = useMemo(() => dlcs.filter((d) => d.owned), [dlcs])
+  const priced = useMemo<PricedItem[]>(
+    () => (settings?.includeDlcInTotals ? [...included, ...ownedDlcs] : included),
+    [included, ownedDlcs, settings?.includeDlcInTotals]
+  )
 
   const value: Store = {
     ready,
@@ -152,6 +175,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     included,
     excludeOf,
     wishlist,
+    dlcs,
+    priced,
+    ownedDlcs,
     sync,
     nowPlaying,
     update,

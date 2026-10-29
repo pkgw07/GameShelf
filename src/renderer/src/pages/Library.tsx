@@ -3,7 +3,7 @@ import { LuLayoutGrid, LuList, LuSearch } from 'react-icons/lu'
 import { costPerHour, EXCLUDE_LABELS, hltbRemaining, isUnplayed } from '@shared/analytics'
 import { GENRES } from '@shared/genres'
 import { STATUS_LABELS, STATUS_ORDER, type GameRow, type GameStatus } from '@shared/types'
-import { Cover, PriceLine, StatusBadge } from '@/components/game'
+import { Cover, LowLine, PriceLine, ReviewBadge, StatusBadge } from '@/components/game'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Progress, Segmented, Select } from '@/components/ui'
 import { cn } from '@/lib/cn'
@@ -11,7 +11,7 @@ import { hours, hoursFromH, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
 type Filter = 'all' | 'played' | 'unplayed' | 'sale' | 'excluded'
-type Sort = 'name' | 'playtime' | 'recent' | 'regular' | 'discount' | 'purchase' | 'cph' | 'remaining' | 'ach' | 'added'
+type Sort = 'name' | 'playtime' | 'recent' | 'regular' | 'discount' | 'purchase' | 'cph' | 'remaining' | 'ach' | 'added' | 'review'
 
 const SORTS: { value: Sort; label: string }[] = [
   { value: 'playtime', label: '플레이타임 많은 순' },
@@ -23,7 +23,8 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: 'purchase', label: '구매가 높은 순' },
   { value: 'cph', label: '시간당 비용 낮은 순' },
   { value: 'remaining', label: '엔딩까지 적게 남은 순' },
-  { value: 'ach', label: '도전과제 달성률 순' }
+  { value: 'ach', label: '도전과제 달성률 순' },
+  { value: 'review', label: 'Steam 평가 높은 순' }
 ]
 
 const PAGE = 120
@@ -56,6 +57,8 @@ function sortFn(sort: Sort): (a: GameRow, b: GameRow) => number {
       })
     case 'ach':
       return desc((g) => (g.achTotal ? (g.achDone ?? 0) / g.achTotal : null))
+    case 'review':
+      return desc((g) => g.review?.percent ?? null)
   }
 }
 
@@ -237,7 +240,11 @@ export function Library() {
                       <StatusBadge status={g.status} />
                     </div>
                     <div className="mt-0.5 flex items-center justify-between gap-2 text-[13px]">
-                      <span className="num text-muted">{hours(g.playtimeMin)}</span>
+                      <span className="num flex items-center gap-2 text-muted">
+                        {hours(g.playtimeMin)}
+                        <ReviewBadge review={g.review} compact />
+                        {g.dlcCount > 0 && <span className="text-[12px] text-faint">DLC {g.dlcOwned}/{g.dlcCount}</span>}
+                      </span>
                       <PriceLine p={g.priceKr} className="text-[13px]" />
                     </div>
                     {g.achTotal ? <Progress className="mt-2" value={(g.achDone ?? 0) / g.achTotal} /> : null}
@@ -273,9 +280,10 @@ export function Library() {
                   <th className="px-2 py-2.5 font-medium">게임</th>
                   <th className="px-2 py-2.5 text-right font-medium">플레이</th>
                   <th className="px-2 py-2.5 font-medium">상태</th>
+                  <th className="px-2 py-2.5 text-right font-medium">평가</th>
                   <th className="px-2 py-2.5 text-right font-medium">정가</th>
                   <th className="px-2 py-2.5 text-right font-medium">현재가</th>
-                  <th className="px-2 py-2.5 text-right font-medium">역대 최저</th>
+                  <th className="px-2 py-2.5 text-right font-medium">역대 최저 (최대 할인)</th>
                   <th className="px-2 py-2.5 text-right font-medium">구매가</th>
                   <th className="px-2 py-2.5 text-right font-medium">시간당</th>
                   <th className="px-2 py-2.5 text-right font-medium">도전과제</th>
@@ -307,11 +315,16 @@ export function Library() {
                       <td className="px-2 py-2">
                         <StatusBadge status={g.status} />
                       </td>
+                      <td className="px-2 py-2 text-right">
+                        <ReviewBadge review={g.review} compact />
+                      </td>
                       <td className="num px-2 py-2 text-right">{won(g.priceKr?.initial)}</td>
                       <td className="px-2 py-2 text-right">
                         <PriceLine p={g.priceKr} className="text-[13px]" />
                       </td>
-                      <td className="num px-2 py-2 text-right">{won(g.lowKr?.amount)}</td>
+                      <td className="px-2 py-2 text-right">
+                        <LowLine low={g.lowKr} fmt={won} />
+                      </td>
                       <td className="num px-2 py-2 text-right">{won(g.purchasePrice)}</td>
                       <td className="num px-2 py-2 text-right">{cph != null ? won(cph) : '—'}</td>
                       <td className="num px-2 py-2 text-right">{g.achTotal ? `${g.achDone}/${g.achTotal}` : '—'}</td>

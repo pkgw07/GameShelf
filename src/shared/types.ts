@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.0.0'
+export const APP_VERSION = '1.1.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'
@@ -27,15 +27,32 @@ export interface PriceInfo {
   fetchedAt: number
 }
 
-/** 역대 최저가 (Steam 스토어 기준) */
+/**
+ * Steam 역대 최저가 = 역대 최대 할인율로 팔렸던 가격.
+ * 지금 할인 중인지와 상관없이 항상 같은 값을 보여 준다.
+ */
 export interface LowInfo {
   amount: number
   regular: number | null
+  /** 역대 최대 할인율 (%) */
   cut: number
   /** ISO 날짜 문자열 */
   date: string | null
-  /** itad: IsThereAnyDeal 데이터 / self: 프로그램이 직접 기록한 가격 */
-  source: 'itad' | 'self'
+  /**
+   * itad: IsThereAnyDeal의 해당 지역 기록
+   * self: 프로그램이 직접 기록한 가격
+   * estimate: 다른 지역의 최대 할인율을 이 지역 정가에 적용한 값
+   */
+  source: 'itad' | 'self' | 'estimate'
+}
+
+/** Steam 사용자 평가 */
+export interface ReviewInfo {
+  /** 긍정 비율 (0~100) */
+  percent: number | null
+  count: number
+  /** 예: 매우 긍정적 */
+  label: string | null
 }
 
 export interface HltbInfo {
@@ -90,6 +107,30 @@ export interface GameRow {
   hltb: HltbInfo | null
   inWishlist: boolean
   firstSeen: number
+  review: ReviewInfo | null
+  /** 상점에 있는 DLC 수 / 보유로 표시된 DLC 수 */
+  dlcCount: number
+  dlcOwned: number
+}
+
+/** 보유 게임의 DLC */
+export interface DlcRow {
+  appid: number
+  key: string
+  parentKey: string
+  parentName: string
+  name: string
+  headerImage: string
+  priceKr: PriceInfo | null
+  priceUs: PriceInfo | null
+  lowKr: LowInfo | null
+  lowUs: LowInfo | null
+  review: ReviewInfo | null
+  isFree: boolean
+  owned: boolean
+  ownedSource: 'manual' | 'license' | 'purchase' | null
+  purchasePrice: number | null
+  purchaseDate: string | null
 }
 
 export interface WishlistRow {
@@ -105,6 +146,9 @@ export interface WishlistRow {
   lowKr: LowInfo | null
   lowUs: LowInfo | null
   detailsStatus: 'ok' | 'unavailable' | 'pending'
+  review: ReviewInfo | null
+  /** 목표가 (원). 이 가격 이하가 되면 알림 */
+  targetPrice: number | null
 }
 
 export interface UserDataPatch {
@@ -133,6 +177,12 @@ export interface Settings {
   autoStatus: boolean
   /** 한국/미국 가격 비교용 환율 (1달러 = ?원) */
   usdKrwRate: number
+  /** 가격 총합에 보유 DLC 포함 */
+  includeDlcInTotals: boolean
+  /** 위시리스트 목표가 도달 알림 */
+  notifyTargetPrice: boolean
+  /** 위시리스트 역대 최저가 도달 알림 */
+  notifyHistoricalLow: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -148,7 +198,10 @@ export const DEFAULT_SETTINGS: Settings = {
   launchAtLogin: false,
   nowPlaying: true,
   autoStatus: true,
-  usdKrwRate: 1400
+  usdKrwRate: 1400,
+  includeDlcInTotals: true,
+  notifyTargetPrice: true,
+  notifyHistoricalLow: true
 }
 
 export interface ProfileInfo {
@@ -212,6 +265,7 @@ export interface GameDetail {
   historyUs: PricePoint[]
   sessions: PlaySession[]
   playtimeSeries: { date: string; minutes: number }[]
+  dlcs: DlcRow[]
 }
 
 export interface StoreSearchResult {
@@ -236,6 +290,7 @@ export interface PriceInspection {
   inWishlist: boolean
   itadAvailable: boolean
   notes: string[]
+  review: ReviewInfo | null
 }
 
 export interface GenreWeight {
@@ -331,6 +386,44 @@ export interface AppInfo {
   dataPath: string
   dbDriver: string
   platform: string
+}
+
+export interface RareAchievement {
+  key: string
+  gameName: string
+  apiname: string
+  name: string
+  description: string
+  icon: string
+  globalPct: number
+  unlockTime: number | null
+}
+
+export interface YearReview {
+  year: number
+  /** 플레이타임 기록이 있는 날 수 (설치 이후만 기록됨) */
+  recordedDays: number
+  playMinutes: number
+  activeDays: number
+  topGames: { key: string; name: string; minutes: number }[]
+  monthlyMinutes: { month: string; minutes: number }[]
+  achievements: number
+  monthlyAchievements: { month: string; count: number }[]
+  rarest: RareAchievement[]
+  completedGames: { key: string; name: string }[]
+  spent: number
+  boughtCount: number
+  bought: { key: string; name: string; price: number | null; date: string }[]
+  sessions: number
+  longestSession: { name: string; minutes: number } | null
+  genreMinutes: { id: string; name: string; minutes: number }[]
+}
+
+/** 붙여넣기/캡처에서 인식한 구매 정보 한 줄 (화면에서 확인 후 적용) */
+export interface PurchaseApplyItem {
+  key: string
+  amount: number | null
+  date: string | null
 }
 
 export interface UpdateState {

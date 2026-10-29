@@ -2,6 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import {
   LuChartColumn,
   LuDownload,
+  LuGift,
+  LuHourglass,
+  LuTrophy,
   LuCompass,
   LuLayoutDashboard,
   LuLibrary,
@@ -23,11 +26,14 @@ import { useStore, type Page } from '@/lib/store'
 const NAV: { page: Page; label: string; icon: ReactNode }[] = [
   { page: 'dashboard', label: '대시보드', icon: <LuLayoutDashboard /> },
   { page: 'library', label: '라이브러리', icon: <LuLibrary /> },
+  { page: 'backlog', label: '백로그', icon: <LuHourglass /> },
   { page: 'money', label: '가격·지출', icon: <LuWallet /> },
   { page: 'deals', label: '할인·위시리스트', icon: <LuTag /> },
   { page: 'search', label: '게임 가격 검색', icon: <LuSearch /> },
   { page: 'recommend', label: '추천', icon: <LuCompass /> },
-  { page: 'activity', label: '활동 기록', icon: <LuChartColumn /> }
+  { page: 'achievements', label: '도전과제', icon: <LuTrophy /> },
+  { page: 'activity', label: '활동 기록', icon: <LuChartColumn /> },
+  { page: 'yearly', label: '연말 결산', icon: <LuGift /> }
 ]
 
 export function Sidebar() {

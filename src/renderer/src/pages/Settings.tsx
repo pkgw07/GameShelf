@@ -214,6 +214,12 @@ export function Settings() {
               hint="실제로 즐긴 게임만으로 가격과 플레이 통계를 보고 싶을 때 켜세요."
             />
             <Switch
+              checked={settings.includeDlcInTotals}
+              onChange={(v) => void save({ includeDlcInTotals: v })}
+              label="가격 총합에 보유 DLC 포함"
+              hint="보유로 표시한 DLC의 정가·현재가·역대 최저가·구매가를 총합에 더합니다."
+            />
+            <Switch
               checked={settings.autoStatus}
               onChange={(v) => void save({ autoStatus: v })}
               label="상태 태그 자동 제안"
@@ -244,6 +250,24 @@ export function Settings() {
             </div>
             <p className="mt-2 text-[12px] text-faint">게임마다 개별로 제외하려면 라이브러리에서 게임을 열어 "통계에서 제외"를 켜세요.</p>
           </div>
+        </Panel>
+
+        <Panel title="알림" action={<Button size="sm" variant="ghost" onClick={() => void window.api.testNotification()}>알림 테스트</Button>}>
+          <div className="divide-y divide-line">
+            <Switch
+              checked={settings.notifyTargetPrice}
+              onChange={(v) => void save({ notifyTargetPrice: v })}
+              label="위시리스트 목표가 도달 알림"
+              hint="할인·위시리스트 화면에서 게임마다 목표가를 정하면, 그 가격 이하가 됐을 때 Windows 알림을 띄웁니다."
+            />
+            <Switch
+              checked={settings.notifyHistoricalLow}
+              onChange={(v) => void save({ notifyHistoricalLow: v })}
+              label="위시리스트 역대 최저가 알림"
+              hint="위시리스트 게임이 역대 최대 할인율 이상으로 할인하면 알립니다. 같은 가격으로는 한 번만 알립니다."
+            />
+          </div>
+          <p className="mt-2 text-[12px] text-faint">가격 확인은 하루 한 번 자동 기록 때와 동기화할 때 이뤄집니다. 트레이에 두면 창을 닫아도 알림을 받을 수 있습니다.</p>
         </Panel>
 
         <Panel title="화면">

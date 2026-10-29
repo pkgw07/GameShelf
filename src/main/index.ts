@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme, safeStorage, shell, Tray } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, Tray } from 'electron'
 import { IPC } from '@shared/api'
 import type { NowPlaying, Settings } from '@shared/types'
 import icon from '../../resources/icon.png?asset'
@@ -100,6 +100,16 @@ function createWindow(show: boolean): void {
   }
 }
 
+function notify(title: string, body: string, appid?: number): void {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title, body, icon })
+  n.on('click', () => {
+    if (appid) void shell.openExternal(`https://store.steampowered.com/app/${appid}/`)
+    else showWindow()
+  })
+  n.show()
+}
+
 function showWindow(): void {
   if (!win) createWindow(true)
   else {
@@ -192,12 +202,14 @@ if (selfTest) {
         send(IPC.nowPlaying, n)
         updateTray()
       },
-      dataChanged: () => send(IPC.dataChanged)
+      dataChanged: () => send(IPC.dataChanged),
+      notify
     })
     updater = new Updater((u) => send(IPC.updateState, u))
     registerIpc(core, updater, {
       onSettingsChanged: (prev, next) => applySettings(prev, next),
-      getWindow: () => win
+      getWindow: () => win,
+      notify
     })
     applySettings(null, settings())
     createWindow(!startHidden)
