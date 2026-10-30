@@ -1,7 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, nativeImage, nativeTheme, Notification, safeStorage, shell, Tray } from 'electron'
+import { app, BrowserWindow, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, shell, Tray } from 'electron'
 import { IPC } from '@shared/api'
 import type { NowPlaying, Settings } from '@shared/types'
 import icon from '../../resources/icon.png?asset'
@@ -13,6 +13,9 @@ import { plainCodec, type SecretCodec } from './settings'
 import { Updater } from './updater'
 
 const DAILY_CHECK_MS = 20 * 60_000
+/** 확대 1배일 때 최소 창 크기 */
+const MIN_W = 1024
+const MIN_H = 640
 
 let core: Core | null = null
 let win: BrowserWindow | null = null
@@ -63,8 +66,8 @@ function createWindow(show: boolean): void {
   win = new BrowserWindow({
     width: 1360,
     height: 880,
-    minWidth: 1024,
-    minHeight: 680,
+    minWidth: MIN_W,
+    minHeight: MIN_H,
     show: false,
     title: 'GameShelf',
     icon,
@@ -77,6 +80,9 @@ function createWindow(show: boolean): void {
       nodeIntegration: false
     }
   })
+  // Alt 를 눌러도 메뉴 막대가 나오지 않도록 메뉴를 없앤다
+  win.removeMenu()
+  win.webContents.on('did-finish-load', () => applyZoom(settings().uiScale))
   win.on('ready-to-show', () => {
     if (show) win?.show()
   })
@@ -156,8 +162,19 @@ function setupTray(): void {
   updateTray()
 }
 
+/** 글자 크기 = 화면 확대 비율 */
+function applyZoom(scale: number): void {
+  const z = Number.isFinite(scale) ? Math.min(1.6, Math.max(0.8, scale)) : 1
+  if (!win) return
+  win.webContents.setZoomFactor(z)
+  // 확대해도 화면 배치가 깨지지 않도록 최소 창 크기를 함께 늘린다 (모니터보다 커지지는 않게)
+  const area = screen.getDisplayMatching(win.getBounds()).workAreaSize
+  win.setMinimumSize(Math.min(Math.round(MIN_W * z), area.width), Math.min(Math.round(MIN_H * z), area.height))
+}
+
 function applySettings(prev: Settings | null, next: Settings): void {
   nativeTheme.themeSource = next.theme
+  if (prev && prev.uiScale !== next.uiScale) applyZoom(next.uiScale)
   if (process.platform === 'win32' || process.platform === 'darwin') {
     app.setLoginItemSettings({ openAtLogin: next.launchAtLogin, args: ['--hidden'] })
   }

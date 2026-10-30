@@ -1,13 +1,11 @@
-import { useMemo, useState } from 'react'
-import { LuExternalLink, LuSearch } from 'react-icons/lu'
-import { dealVerdict, normalizeHistory, VERDICT_LABELS } from '@shared/analytics'
+import { useState } from 'react'
+import { LuSearch } from 'react-icons/lu'
 import type { PriceInspection, StoreSearchResult } from '@shared/types'
-import { StepChart } from '@/components/charts'
-import { Cover, LowLine, PriceLine, ReviewBadge, VERDICT_TONE } from '@/components/game'
+import { Cover, PriceLine } from '@/components/game'
+import { Inspection } from '@/components/Inspection'
 import { PageBody, TopBar } from '@/components/Shell'
-import { Badge, Button, Empty, Input, Panel, Segmented, Spinner } from '@/components/ui'
+import { Button, Empty, Input, Panel, Spinner } from '@/components/ui'
 import { cn } from '@/lib/cn'
-import { dateKo, price, usd, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
 export function Search() {
@@ -102,121 +100,15 @@ export function Search() {
                 <Spinner /> 가격과 할인 이력을 불러오는 중
               </div>
             )}
-            {!inspecting && info && <Inspection info={info} />}
+            {!inspecting && info && (
+              <Panel>
+                <Inspection info={info} />
+              </Panel>
+            )}
             {!inspecting && !info && <Empty title="왼쪽 목록에서 게임을 고르세요">현재 가격, 역대 최저가, 할인 이력 그래프를 보여 줍니다.</Empty>}
           </div>
         </div>
       </PageBody>
     </>
-  )
-}
-
-function Inspection({ info }: { info: PriceInspection }) {
-  const [region, setRegion] = useState<'kr' | 'us'>(info.historyKr.length || !info.historyUs.length ? 'kr' : 'us')
-  const hist = useMemo(() => normalizeHistory(region === 'kr' ? info.historyKr : info.historyUs), [info, region])
-  const cur = region === 'kr' ? info.priceKr : info.priceUs
-  const low = region === 'kr' ? info.lowKr : info.lowUs
-  const fmt = region === 'kr' ? won : usd
-  const verdict = dealVerdict(cur, low)
-  const maxCut = hist.reduce((a, p) => Math.max(a, p.discount), 0)
-  const saleCount = hist.filter((p) => p.discount > 0).length
-
-  return (
-    <Panel>
-      <div className="flex gap-5">
-        <Cover src={info.headerImage} alt={info.name} className="aspect-[460/215] w-[260px] shrink-0 rounded-xl" />
-        <div className="min-w-0 flex-1">
-          <h2 className="text-xl leading-tight font-bold text-ink">{info.name}</h2>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {info.owned && <Badge tone="brand">보유 중</Badge>}
-            {info.inWishlist && <Badge tone="sale">위시리스트</Badge>}
-            {info.genres.map((g) => (
-              <Badge key={g.id}>{g.name}</Badge>
-            ))}
-          </div>
-          {info.review && (
-            <div className="mt-1.5 text-[13px]">
-              <span className="text-muted">Steam 평가 </span>
-              <ReviewBadge review={info.review} />
-              <span className="num ml-1 text-faint">({info.review.count.toLocaleString()}개)</span>
-            </div>
-          )}
-          <div className="mt-4 flex items-end gap-4">
-            <div>
-              <div className="text-[12px] text-muted">현재 가격 ({region === 'kr' ? '한국' : '미국'})</div>
-              <PriceLine p={cur} className="text-2xl" />
-            </div>
-            {verdict !== 'unknown' && (
-              <Badge tone={VERDICT_TONE[verdict]} className="mb-1 px-3 py-1 text-[13px]">
-                {VERDICT_LABELS[verdict]}
-              </Badge>
-            )}
-          </div>
-          <Button
-            size="sm"
-            className="mt-3"
-            icon={<LuExternalLink />}
-            onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${info.appid}/`)}
-          >
-            Steam 상점에서 보기
-          </Button>
-        </div>
-      </div>
-
-      <div className="mt-6 grid grid-cols-4 gap-4 rounded-xl bg-surface-2 p-4">
-        <div>
-          <div className="text-[12px] text-muted">정가</div>
-          <div className="num text-lg font-bold">{price(cur, 'initial')}</div>
-        </div>
-        <div>
-          <div className="text-[12px] text-muted">Steam 역대 최저가</div>
-          <div className="text-lg">
-            <LowLine low={low} fmt={fmt} />
-          </div>
-          <div className="text-[11px] text-faint">
-            {low?.source === 'estimate' ? '미국 최대 할인율 기준' : low?.date ? dateKo(low.date) : ''}
-          </div>
-        </div>
-        <div>
-          <div className="text-[12px] text-muted">역대 최대 할인율</div>
-          <div className="num text-lg font-bold">{Math.max(maxCut, low?.cut ?? 0) ? `${Math.max(maxCut, low?.cut ?? 0)}%` : '—'}</div>
-          <div className="text-[11px] text-faint">지금 {cur?.discount ?? 0}%</div>
-        </div>
-        <div>
-          <div className="text-[12px] text-muted">기록된 할인 횟수</div>
-          <div className="num text-lg font-bold">{saleCount ? `${saleCount}번` : '—'}</div>
-          <div className="text-[11px] text-faint">{hist.length ? `${dateKo(hist[0].t)}부터` : '이력 없음'}</div>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-[15px] font-semibold">가격 변동 이력</h3>
-          <Segmented<'kr' | 'us'>
-            size="sm"
-            value={region}
-            onChange={setRegion}
-            options={[
-              { value: 'kr', label: '한국' },
-              { value: 'us', label: '미국' }
-            ]}
-          />
-        </div>
-        <StepChart
-          format={fmt}
-          height={220}
-          series={[{ name: region === 'kr' ? '한국 가격' : '미국 가격', color: 'var(--chart-1)', points: hist.map((p) => ({ t: p.t, v: p.final })) }]}
-          markers={low ? [{ v: low.amount, label: '역대 최저', color: 'var(--good)' }] : []}
-        />
-      </div>
-      {info.notes.length > 0 && (
-        <ul className="mt-4 space-y-1 text-[12px] text-faint">
-          {info.notes.map((n) => (
-            <li key={n}>{n}</li>
-          ))}
-        </ul>
-      )}
-      {info.itadAvailable && <p className="mt-2 text-[11px] text-faint">가격 이력 제공: IsThereAnyDeal</p>}
-    </Panel>
   )
 }

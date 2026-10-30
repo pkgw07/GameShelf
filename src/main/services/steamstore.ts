@@ -56,6 +56,7 @@ export class SteamStore {
         webPreferences: { partition: PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false }
       })
       // 새 창(도움말 링크 등)은 기본 브라우저로
+      win.removeMenu()
       win.webContents.setWindowOpenHandler(({ url }) => {
         if (/^https:\/\//.test(url)) void shell.openExternal(url)
         return { action: 'deny' }

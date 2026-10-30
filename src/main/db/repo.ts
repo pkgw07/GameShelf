@@ -315,13 +315,15 @@ export class Repo {
   }
 
   /** GetItems 로 받은 DLC 기본 정보 저장 (상세 정보를 따로 받지 않는 DLC용) */
-  saveDlcBasic(appid: number, parent: number, name: string | null, isFree: boolean, now = Date.now()): void {
+  saveDlcBasic(appid: number, parent: number, name: string | null, isFree: boolean, now = Date.now(), headerImage: string | null = null): void {
     const cur = this.db.prepare('SELECT status FROM steam_app WHERE appid = ?').get<Row>(appid)
     if (cur && cur.status === 'ok') {
-      this.db.prepare('UPDATE steam_app SET name_ko = COALESCE(?, name_ko), parent_appid = ? WHERE appid = ?').run(name, parent, appid)
+      this.db
+        .prepare('UPDATE steam_app SET name_ko = COALESCE(?, name_ko), parent_appid = ?, header_image = COALESCE(?, header_image) WHERE appid = ?')
+        .run(name, parent, headerImage, appid)
       return
     }
-    this.upsertSteamApp({ appid, status: 'ok', type: 'dlc', nameKo: name, isFree, parentAppid: parent, genres: [] }, now)
+    this.upsertSteamApp({ appid, status: 'ok', type: 'dlc', nameKo: name, isFree, parentAppid: parent, genres: [], headerImage }, now)
   }
 
   saveReview(appid: number, r: ReviewInfo, now = Date.now()): void {

@@ -71,12 +71,16 @@ export function VerdictBadge({ p, low }: { p: PriceInfo | null; low: LowInfo | n
 }
 
 /** 현재가 + (할인 시) 정가 취소선 + 할인율 */
-export function PriceLine({ p, className }: { p: PriceInfo | null; className?: string }) {
-  if (!p) return <span className={cn('text-faint', className)}>가격 없음</span>
+/** compact: 좁은 카드용. 할인 전 가격은 숨기고 마우스를 올리면 보여 준다 */
+export function PriceLine({ p, className, compact }: { p: PriceInfo | null; className?: string; compact?: boolean }) {
+  if (!p) return <span className={cn('whitespace-nowrap text-faint', className)}>가격 없음</span>
   return (
-    <span className={cn('num inline-flex items-baseline gap-1.5', className)}>
+    <span
+      className={cn('num inline-flex items-baseline gap-1.5 whitespace-nowrap', className)}
+      title={compact && p.discount > 0 ? `정가 ${price(p, 'initial')}` : undefined}
+    >
       {p.discount > 0 && <span className="rounded bg-sale px-1 text-[11px] font-bold text-white dark:text-[#1a1300]">-{p.discount}%</span>}
-      {p.discount > 0 && <span className="text-[12px] text-faint line-through">{price(p, 'initial')}</span>}
+      {p.discount > 0 && !compact && <span className="text-[12px] text-faint line-through">{price(p, 'initial')}</span>}
       <span className={cn('font-semibold', p.discount > 0 ? 'text-sale' : 'text-ink')}>{price(p)}</span>
     </span>
   )

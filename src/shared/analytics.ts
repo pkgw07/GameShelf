@@ -8,15 +8,25 @@ export function isUnplayed(g: Pick<GameRow, 'playtimeMin'>, unplayedMinutes: num
   return g.playtimeMin < Math.max(0, unplayedMinutes)
 }
 
-export type ExcludeReason = 'manual' | 'free' | 'unplayed' | 'genre'
+export type ExcludeReason = 'manual' | 'free' | 'giveaway' | 'unplayed' | 'genre'
+
+/**
+ * 무료 배포로 받은 것으로 보이는 게임: 유료 게임인데 역대 최저가가 0원이고, 돈을 내고 산 기록이 없음.
+ * (정가로 샀는데 나중에 무료 배포된 게임은 구매가를 넣으면 빠지지 않는다)
+ */
+export function isGiveaway(g: Pick<GameRow, 'isFree' | 'lowKr' | 'lowUs' | 'purchasePrice'>): boolean {
+  if (g.isFree || (g.purchasePrice ?? 0) > 0) return false
+  return g.lowKr?.amount === 0 || (g.lowKr == null && g.lowUs?.amount === 0)
+}
 
 /** 통계에서 빠지는 이유. 빠지지 않으면 null */
 export function excludeReason(
   g: GameRow,
-  s: Pick<Settings, 'excludeFree' | 'excludeUnplayed' | 'excludedGenres' | 'unplayedMinutes'>
+  s: Pick<Settings, 'excludeFree' | 'excludeUnplayed' | 'excludedGenres' | 'unplayedMinutes'> & Partial<Pick<Settings, 'excludeGiveaway'>>
 ): ExcludeReason | null {
   if (g.excludedManual) return 'manual'
   if (s.excludeFree && g.isFree) return 'free'
+  if (s.excludeGiveaway && isGiveaway(g)) return 'giveaway'
   if (s.excludeUnplayed && isUnplayed(g, s.unplayedMinutes)) return 'unplayed'
   if (s.excludedGenres.length && g.genres.some((x) => s.excludedGenres.includes(x.id))) return 'genre'
   return null
@@ -25,6 +35,7 @@ export function excludeReason(
 export const EXCLUDE_LABELS: Record<ExcludeReason, string> = {
   manual: '직접 제외',
   free: '무료 게임',
+  giveaway: '무료 배포로 받은 게임',
   unplayed: '안 한 게임',
   genre: '제외 장르'
 }

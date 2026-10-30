@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { LuCheck, LuDatabase, LuDownload, LuEye, LuEyeOff, LuFolderOpen, LuUpload } from 'react-icons/lu'
+import { LuCheck, LuKeyRound, LuTrash2, LuDatabase, LuDownload, LuEye, LuEyeOff, LuFolderOpen, LuUpload } from 'react-icons/lu'
+import { isGiveaway } from '@shared/analytics'
 import { GENRES } from '@shared/genres'
-import type { AppInfo, Settings as S } from '@shared/types'
+import { DEFAULT_SETTINGS, UI_SCALES, type AppInfo, type Settings as S } from '@shared/types'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Field, Input, Panel, Segmented, Spinner, Switch } from '@/components/ui'
 import { STORE_LOGIN_NOTE, StoreLoginRow, useSteamImport } from '@/components/SteamConnect'
@@ -52,6 +53,7 @@ export function Settings() {
   const [info, setInfo] = useState<AppInfo | null>(null)
   const [rate, setRate] = useState(String(settings?.usdKrwRate ?? 1400))
   const [minutes, setMinutes] = useState(String(settings?.unplayedMinutes ?? 30))
+  const giveaways = games.filter(isGiveaway).length
 
   useEffect(() => {
     void window.api.getAppInfo().then(setInfo)
@@ -211,6 +213,12 @@ export function Settings() {
               hint="가격 총합, 안 한 게임 수, 추천 분석에서 빠집니다."
             />
             <Switch
+              checked={settings.excludeGiveaway}
+              onChange={(v) => void save({ excludeGiveaway: v })}
+              label={`무료 배포로 받은 게임을 통계에서 제외${giveaways ? ` (${giveaways}개)` : ''}`}
+              hint="Steam 역대 최저가가 0원인 유료 게임입니다. 구매 기록 입력 목록에서도 빠집니다. 돈을 내고 산 게임이라면 구매가를 넣으면 다시 포함됩니다."
+            />
+            <Switch
               checked={settings.excludeUnplayed}
               onChange={(v) => void save({ excludeUnplayed: v })}
               label="안 한 게임을 통계에서 제외"
@@ -284,6 +292,17 @@ export function Settings() {
                 { value: 'light', label: '라이트' },
                 { value: 'dark', label: '다크' }
               ]}
+            />
+          </div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <span className="text-sm text-ink">
+              글자 크기
+              <span className="ml-2 text-[12px] text-faint">Ctrl + 마우스 휠, Ctrl + / - / 0 으로도 바꿀 수 있습니다</span>
+            </span>
+            <Segmented<string>
+              value={String(settings.uiScale)}
+              onChange={(v) => void save({ uiScale: Number(v) })}
+              options={UI_SCALES.map((v) => ({ value: String(v), label: v === DEFAULT_SETTINGS.uiScale ? `${Math.round(v * 100)}% (기본)` : `${Math.round(v * 100)}%` }))}
             />
           </div>
         </Panel>
@@ -385,6 +404,8 @@ export function Settings() {
           </div>
         </Panel>
 
+        <ResetPanel />
+
         <Panel title="데이터 출처">
           <ul className="space-y-1 text-[13px] text-muted">
             <li>게임 목록·플레이타임·도전과제·가격: Steam Web API, Steam 상점</li>
@@ -416,6 +437,59 @@ function StoreLoginPanel() {
         <StoreLoginRow imp={imp} />
         {imp.step && <p className="text-[13px] text-muted">{imp.step}</p>}
         <p className="text-[12px] text-faint">{STORE_LOGIN_NOTE}</p>
+      </div>
+    </Panel>
+  )
+}
+
+function ResetPanel() {
+  const { toast } = useStore()
+  const [confirm, setConfirm] = useState<'accounts' | 'all' | null>(null)
+  const [busy, setBusy] = useState(false)
+  const run = async (scope: 'accounts' | 'all') => {
+    setBusy(true)
+    try {
+      const r = await window.api.factoryReset(scope)
+      toast(r.message)
+      // 설정·프로필을 처음부터 다시 읽는다 (전체 초기화는 프로그램이 다시 시작됨)
+      if (scope === 'accounts') setTimeout(() => window.location.reload(), 800)
+    } catch (e) {
+      toast((e as Error).message, 'error')
+      setBusy(false)
+    }
+  }
+  return (
+    <Panel title="초기화">
+      <div className="space-y-3 text-[13px]">
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="danger" icon={<LuKeyRound />} disabled={busy} onClick={() => setConfirm('accounts')}>
+            계정 정보만 지우기
+          </Button>
+          <span className="text-muted">Steam API 키, Steam 계정 연결, IsThereAnyDeal 키, Steam 로그인을 지웁니다. 게임·가격·구매 기록은 남습니다.</span>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="danger" icon={<LuTrash2 />} disabled={busy} onClick={() => setConfirm('all')}>
+            전체 초기화
+          </Button>
+          <span className="text-muted">위 계정 정보와 모든 데이터(게임, 가격 이력, 구매 기록, 태그, 메모, 설정)를 지우고 처음 상태로 다시 시작합니다.</span>
+        </div>
+        {confirm && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-bad/30 bg-bad-soft px-4 py-3">
+            <span className="text-ink">
+              {confirm === 'all'
+                ? '모든 데이터를 지우고 프로그램을 다시 시작합니다. 지우기 직전 데이터는 데이터 폴더의 backups에 백업해 둡니다.'
+                : 'API 키와 계정 연결, Steam 로그인을 지웁니다.'}{' '}
+              계속할까요?
+            </span>
+            <Button variant="danger" disabled={busy} onClick={() => void run(confirm)}>
+              {busy ? <Spinner /> : null}
+              지우기
+            </Button>
+            <Button variant="ghost" disabled={busy} onClick={() => setConfirm(null)}>
+              취소
+            </Button>
+          </div>
+        )}
       </div>
     </Panel>
   )

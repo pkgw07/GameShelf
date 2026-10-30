@@ -233,7 +233,7 @@ export class SyncService {
             for (const id of itemTargets) {
               const it = items.get(id)
               const parent = dlcParent.get(id)
-              if (parent != null && it) this.repo.saveDlcBasic(id, parent, it.name, it.isFree)
+              if (parent != null && it) this.repo.saveDlcBasic(id, parent, it.name, it.isFree, Date.now(), it.headerImage)
               this.repo.saveReview(id, it?.review ?? { percent: null, count: 0, label: null })
             }
           })

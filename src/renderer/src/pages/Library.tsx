@@ -226,11 +226,11 @@ export function Library() {
         )}
 
         {filter === 'dlc' ? (
-          <DlcTable q={q} onOpenGame={openGame} />
+          <DlcTable q={q} onOpenGame={openGame} view={view} />
         ) : !list.length ? (
           <Empty title="조건에 맞는 게임이 없습니다">검색어나 필터를 바꿔 보세요.</Empty>
         ) : view === 'grid' ? (
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
             {shown.map((g) => {
               const ex = excludeOf(g)
               const unplayed = isUnplayed(g, unplayedMin)
@@ -245,13 +245,13 @@ export function Library() {
                       <div className="min-w-0 truncate text-[14px] font-semibold text-ink">{g.nameKo || g.name}</div>
                       <StatusBadge status={g.status} />
                     </div>
-                    <div className="mt-0.5 flex items-center justify-between gap-2 text-[13px]">
-                      <span className="num flex items-center gap-2 text-muted">
+                    <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[13px]">
+                      <span className="num flex min-w-0 items-center gap-2 whitespace-nowrap text-muted">
                         {hours(g.playtimeMin)}
                         <ReviewBadge review={g.review} compact />
                         {g.dlcCount > 0 && <span className="text-[12px] text-faint">DLC {g.dlcOwned}/{g.dlcCount}</span>}
                       </span>
-                      <PriceLine p={g.priceKr} className="text-[13px]" />
+                      <PriceLine p={g.priceKr} className="ml-auto text-[13px]" compact />
                     </div>
                     {g.achTotal ? <Progress className="mt-2" value={(g.achDone ?? 0) / g.achTotal} /> : null}
                   </button>
@@ -352,8 +352,8 @@ export function Library() {
   )
 }
 
-function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void }) {
-  const { dlcs, reload, toast } = useStore()
+function DlcTable({ q, onOpenGame, view }: { q: string; onOpenGame(key: string): void; view: 'grid' | 'table' }) {
+  const { dlcs, reload, toast, openApp } = useStore()
   const [ownedOnly, setOwnedOnly] = useState(false)
   const [limit, setLimit] = useState(PAGE)
   const needle = q.trim().toLowerCase()
@@ -396,6 +396,30 @@ function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void 
       <p className="text-[12px] text-faint">
         설정에서 Steam에 로그인해 두면 동기화할 때 보유 DLC가 자동으로 체크됩니다. 로그인하지 않으면 이 PC에 설치된 게임의 DLC만 찾아 체크합니다. 여기서 직접 체크·해제할 수도 있고, 직접 바꾼 표시는 자동 확인이 덮어쓰지 않습니다.
       </p>
+      {view === 'grid' ? (
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
+          {rows.slice(0, limit).map((d) => (
+            <div key={d.appid} className={cn('group relative', !d.owned && 'opacity-70 hover:opacity-100')}>
+              <button type="button" className="block w-full text-left" onClick={() => openApp(d.appid)}>
+                <div className="overflow-hidden rounded-xl ring-1 ring-line">
+                  <Cover src={d.headerImage} alt={d.name} className="aspect-[460/215] w-full transition-transform group-hover:scale-[1.03]" />
+                </div>
+                <div className="mt-2 truncate text-[14px] font-semibold text-ink">{d.name}</div>
+              </button>
+              <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[13px]">
+                <button type="button" className="min-w-0 truncate text-[12px] text-faint hover:underline" onClick={() => onOpenGame(d.parentKey)}>
+                  {d.parentName}
+                </button>
+                {d.isFree ? <span className="ml-auto text-faint">무료</span> : <PriceLine p={d.priceKr} className="ml-auto text-[13px]" compact />}
+              </div>
+              <label className="absolute top-2 left-2 inline-flex cursor-pointer items-center gap-1.5 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white">
+                <input type="checkbox" className="h-3.5 w-3.5 accent-[var(--brand)]" checked={d.owned} onChange={(e) => void toggle(d.appid, e.target.checked)} />
+                보유
+              </label>
+            </div>
+          ))}
+        </div>
+      ) : (
       <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
         <table className="w-full text-[13px]">
           <thead>
@@ -415,13 +439,14 @@ function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void 
                 <td className="px-3 py-2">
                   <input type="checkbox" aria-label="보유" className="h-4 w-4 accent-[var(--brand)]" checked={d.owned} onChange={(e) => void toggle(d.appid, e.target.checked)} />
                 </td>
-                <td className="max-w-[320px] px-2 py-2">
+                <td className="max-w-[380px] px-2 py-1.5">
                   <button
                     type="button"
-                    className={cn('block max-w-full truncate text-left hover:underline', d.owned ? 'font-medium text-ink' : '')}
-                    onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${d.appid}/`)}
+                    className={cn('flex max-w-full items-center gap-2.5 text-left hover:underline', d.owned ? 'font-medium text-ink' : '')}
+                    onClick={() => openApp(d.appid)}
                   >
-                    {d.name}
+                    <Cover src={d.headerImage} alt="" className="h-8 w-[68px] shrink-0 rounded" />
+                    <span className="truncate">{d.name}</span>
                   </button>
                 </td>
                 <td className="max-w-[220px] px-2 py-2">
@@ -440,6 +465,7 @@ function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void 
           </tbody>
         </table>
       </div>
+      )}
       {rows.length > limit && (
         <div className="flex justify-center">
           <Button onClick={() => setLimit((l) => l + PAGE)}>더 보기 ({rows.length - limit}개 남음)</Button>

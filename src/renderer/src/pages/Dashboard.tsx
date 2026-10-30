@@ -11,7 +11,7 @@ import { useStore } from '@/lib/store'
 const STALE_SEC = 90 * 86_400
 
 export function Dashboard() {
-  const { games, included, priced, ownedDlcs, settings, go, openGame, updateGame, wishlist, sync } = useStore()
+  const { games, included, priced, ownedDlcs, settings, go, openGame, openApp, updateGame, wishlist, sync } = useStore()
   const [activity, setActivity] = useState<ActivityData | null>(null)
   useEffect(() => {
     void window.api.getActivity(30).then(setActivity)
@@ -227,11 +227,11 @@ export function Dashboard() {
                   key={w.appid}
                   type="button"
                   className="self-start text-left"
-                  onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${w.appid}/`)}
+                  onClick={() => openApp(w.appid)}
                 >
                   <Cover src={w.headerImage} alt={w.name} className="aspect-[460/215] w-full rounded-lg" />
                   <div className="mt-2 truncate text-[13px] font-medium text-ink">{w.name}</div>
-                  <PriceLine p={w.priceKr} className="text-[13px]" />
+                  <PriceLine p={w.priceKr} className="text-[13px]" compact />
                   <div className="mt-1">
                     <VerdictBadge p={w.priceKr} low={w.lowKr} />
                   </div>

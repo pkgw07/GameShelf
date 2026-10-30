@@ -180,6 +180,9 @@ interface AppDetailsData {
   header_image?: string
   genres?: { id: string; description: string }[]
   release_date?: { date?: string }
+  short_description?: string
+  developers?: string[]
+  screenshots?: { path_thumbnail?: string; path_full?: string }[]
   price_overview?: PriceOverview
   dlc?: number[]
   fullgame?: { appid?: string | number }
@@ -189,7 +192,7 @@ interface AppDetailsData {
 export async function getAppDetails(
   appid: number,
   signal?: AbortSignal
-): Promise<{ app: SteamAppInput; priceKr: Omit<PriceInfo, 'fetchedAt'> | null }> {
+): Promise<{ app: SteamAppInput; priceKr: Omit<PriceInfo, 'fetchedAt'> | null; extra?: AppExtra }> {
   const r = await request<Record<string, { success: boolean; data?: AppDetailsData }>>(
     `${STORE}/api/appdetails?${q({ appids: appid, cc: 'kr', l: 'koreana' })}`,
     { limiter: limiters.steamStore, signal }
@@ -213,8 +216,34 @@ export async function getAppDetails(
       dlc: (d.dlc ?? []).map(Number).filter((x) => Number.isFinite(x)),
       parentAppid: d.fullgame?.appid != null ? Number(d.fullgame.appid) : null
     },
-    priceKr: parsePriceOverview(d.price_overview)
+    priceKr: parsePriceOverview(d.price_overview),
+    extra: {
+      description: d.short_description ? decodeEntities(d.short_description.replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim() || null : null,
+      developers: d.developers ?? [],
+      screenshots: (d.screenshots ?? [])
+        .filter((x) => x.path_thumbnail && x.path_full)
+        .slice(0, 8)
+        .map((x) => ({ thumb: x.path_thumbnail as string, full: x.path_full as string }))
+    }
   }
+}
+
+/** 상세 창에만 쓰는 상점 정보 (DB 에는 저장하지 않음) */
+export interface AppExtra {
+  description: string | null
+  developers: string[]
+  screenshots: { thumb: string; full: string }[]
+}
+
+function decodeEntities(s: string): string {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, n: string) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, '&')
 }
 
 /** 여러 게임의 가격을 한 번에 조회 (price_overview 필터 사용 시 일괄 조회 가능) */
@@ -271,6 +300,14 @@ export interface StoreItemInfo {
   isFree: boolean
   parentAppid: number | null
   review: ReviewInfo | null
+  /** 상점 머리 이미지 (새 게임·DLC는 주소에 해시가 들어가 있어 이 값을 써야 한다) */
+  headerImage: string | null
+}
+
+/** GetItems assets → 이미지 주소 */
+export function storeAssetUrl(assets: { asset_url_format?: string; header?: string } | undefined): string | null {
+  if (!assets?.asset_url_format || !assets.header) return null
+  return `https://shared.akamai.steamstatic.com/store_item_assets/${assets.asset_url_format.replace('${FILENAME}', assets.header)}`
 }
 
 export async function getStoreItems(appids: number[], signal?: AbortSignal): Promise<Map<number, StoreItemInfo>> {
@@ -280,7 +317,7 @@ export async function getStoreItems(appids: number[], signal?: AbortSignal): Pro
     const input = {
       ids: part.map((appid) => ({ appid })),
       context: { language: 'koreana', country_code: 'KR', steam_realm: 1 },
-      data_request: { include_basic_info: true, include_reviews: true }
+      data_request: { include_basic_info: true, include_reviews: true, include_assets: true }
     }
     const r = await request<{
       response?: {
@@ -291,6 +328,7 @@ export async function getStoreItems(appids: number[], signal?: AbortSignal): Pro
           name?: string
           is_free?: boolean
           related_items?: { parent_appid?: number }
+          assets?: { asset_url_format?: string; header?: string }
           reviews?: { summary_filtered?: { review_count?: number; percent_positive?: number; review_score_label?: string } }
         }[]
       }
@@ -308,6 +346,7 @@ export async function getStoreItems(appids: number[], signal?: AbortSignal): Pro
         name: it.name ?? null,
         isFree: Boolean(it.is_free),
         parentAppid: it.related_items?.parent_appid ?? null,
+        headerImage: storeAssetUrl(it.assets),
         review:
           sum && (sum.review_count ?? 0) > 0
             ? { percent: sum.percent_positive ?? null, count: sum.review_count ?? 0, label: sum.review_score_label ?? null }

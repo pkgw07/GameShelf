@@ -222,7 +222,7 @@ export class Insights {
   async inspectPrice(appid: number): Promise<PriceInspection> {
     const s = this.getSettings()
     const notes: string[] = []
-    const { app, priceKr } = await getAppDetails(appid)
+    const { app, priceKr, extra } = await getAppDetails(appid)
     if (app.status === 'ok') this.repo.upsertSteamApp(app)
     else notes.push('한국 상점에서 판매하지 않거나 정보를 받을 수 없는 게임입니다.')
     let priceUs = null
@@ -291,6 +291,10 @@ export class Insights {
       lowUs: this.lowFrom(appid, 'us', pu, historyUs),
       historyKr,
       historyUs,
+      description: extra?.description ?? null,
+      releaseDate: app.status === 'ok' ? (app.releaseDate ?? null) : null,
+      developers: extra?.developers ?? [],
+      screenshots: extra?.screenshots ?? [],
       owned,
       inWishlist,
       itadAvailable,

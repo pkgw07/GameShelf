@@ -140,7 +140,7 @@ export function Money() {
           action={<span className="text-[12px] text-faint">게임별 미국 정가 × 환율 {region.rate.toLocaleString()}원 기준 · 설정에서 변경</span>}
         >
           {region.n ? (
-            <div className="grid grid-cols-[200px_1fr_1fr] gap-6">
+            <div className="grid grid-cols-[200px_minmax(0,1fr)_minmax(0,1fr)] gap-6">
               <div>
                 <div className="text-[13px] text-muted">평균 비율</div>
                 <div className="num text-3xl font-extrabold text-ink">{pct(region.avg)}</div>
@@ -190,7 +190,7 @@ function RegionList({ title, rows, onOpen }: { title: string; rows: { g: GameRow
             <button type="button" className="min-w-0 flex-1 truncate text-left text-ink hover:underline" onClick={() => onOpen(g.key)}>
               {g.nameKo || g.name}
             </button>
-            <span className="num text-faint">
+            <span className="num shrink-0 whitespace-nowrap text-faint">
               {won(g.priceKr?.initial)} / {usd(g.priceUs?.initial)}
             </span>
             <span className={cn('num w-12 text-right font-semibold', r < 1 ? 'text-good' : 'text-bad')}>{pct(r)}</span>

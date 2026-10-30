@@ -11,7 +11,7 @@ import { useStore } from '@/lib/store'
 const compact = new Intl.NumberFormat('ko-KR', { notation: 'compact' })
 
 export function Recommend() {
-  const { games, openGame, toast } = useStore()
+  const { games, openGame, openApp, toast } = useStore()
   const [data, setData] = useState<RecommendationResult | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -100,7 +100,7 @@ export function Recommend() {
               {data.candidates.length ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
                   {data.candidates.map((r) => (
-                    <RecCard key={r.appid} r={r} onClick={() => void window.api.openExternal(`https://store.steampowered.com/app/${r.appid}/`)} />
+                    <RecCard key={r.appid} r={r} onClick={() => openApp(r.appid)} />
                   ))}
                 </div>
               ) : (
@@ -130,15 +130,15 @@ function RecCard({ r, onClick, owned }: { r: Recommendation; onClick(): void; ow
         ))}
         {r.inWishlist && <Badge tone="sale">위시리스트</Badge>}
       </div>
-      <div className="mt-1.5 flex items-center justify-between text-[12px]">
+      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-2 text-[12px]">
         {owned ? (
           <span className="text-muted">{r.playtimeMin ? `플레이 ${hours(r.playtimeMin)}` : '아직 안 함'}</span>
         ) : (
-          <span className="num text-muted">
+          <span className="num whitespace-nowrap text-muted">
             {r.positivePct != null ? `긍정 ${r.positivePct}%` : ''} {r.reviews ? `· 리뷰 ${compact.format(r.reviews)}` : ''}
           </span>
         )}
-        {!owned && <PriceLine p={r.priceKr} className="text-[13px]" />}
+        {!owned && <PriceLine p={r.priceKr} className="ml-auto text-[13px]" compact />}
       </div>
     </button>
   )

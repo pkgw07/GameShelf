@@ -21,6 +21,8 @@ interface Item {
   dateIsAcquired: boolean
   regular: number | null
   source: 'manual' | 'history' | 'license' | 'purchase' | null
+  /** 통계에서 제외된 게임 (무료 배포, 안 한 게임 등 설정에 따름) */
+  excluded: boolean
 }
 
 type Sort = 'dateDesc' | 'dateAsc' | 'priceDesc' | 'priceAsc' | 'name' | 'saved'
@@ -29,7 +31,8 @@ type Show = 'priced' | 'all'
 const PAGE = 150
 
 export function Purchases() {
-  const { games, dlcs, openGame, updateGame, reload, toast } = useStore()
+  const { games, dlcs, openGame, updateGame, reload, toast, excludeOf } = useStore()
+  const [showExcluded, setShowExcluded] = useState(false)
   const [sort, setSort] = useState<Sort>('dateDesc')
   const [show, setShow] = useState<Show>('priced')
   const [year, setYear] = useState('all')
@@ -47,7 +50,8 @@ export function Purchases() {
       date: x.purchaseDate ?? x.acquiredDate,
       dateIsAcquired: !x.purchaseDate && Boolean(x.acquiredDate),
       regular: x.priceKr?.initial ?? null,
-      source: x.purchaseSource
+      source: x.purchaseSource,
+      excluded: excludeOf(x) != null
     }))
     const d: Item[] = dlcs
       .filter((x) => x.owned || x.purchasePrice != null)
@@ -62,10 +66,13 @@ export function Purchases() {
         dateIsAcquired: false,
         regular: x.priceKr?.initial ?? null,
         // DLC 의 ownedSource 는 '보유' 출처라, 라이선스만으로는 구매가 출처를 알 수 없음
-        source: x.ownedSource === 'manual' || x.ownedSource === 'purchase' ? x.ownedSource : null
+        source: x.ownedSource === 'manual' || x.ownedSource === 'purchase' ? x.ownedSource : null,
+        excluded: false
       }))
     return [...g, ...d]
-  }, [games, dlcs])
+  }, [games, dlcs, excludeOf])
+  // 구매가 없는 제외 게임(무료 배포 등)은 입력 목록에서 숨긴다
+  const hiddenCount = useMemo(() => items.filter((i) => i.excluded && i.price == null).length, [items])
 
   const priced = useMemo(() => items.filter((i) => i.price != null), [items])
   const years = useMemo(
@@ -76,6 +83,7 @@ export function Purchases() {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase()
     const list = (show === 'priced' ? priced : items).filter((i) => {
+      if (show === 'all' && !showExcluded && i.excluded && i.price == null) return false
       if (year !== 'all' && i.date?.slice(0, 4) !== year) return false
       if (needle && !i.name.toLowerCase().includes(needle) && !(i.parent ?? '').toLowerCase().includes(needle)) return false
       return true
@@ -92,7 +100,7 @@ export function Purchases() {
       saved: (a, b) => num(saved(b), -Infinity) - num(saved(a), -Infinity) || byName(a, b)
     }
     return list.sort(cmp[sort])
-  }, [items, priced, show, year, q, sort])
+  }, [items, priced, show, year, q, sort, showExcluded])
 
   useEffect(() => setLimit(PAGE), [sort, show, year, q])
 
@@ -157,7 +165,7 @@ export function Purchases() {
             onChange={setShow}
             options={[
               { value: 'priced', label: '구매가 있는 항목', count: priced.length },
-              { value: 'all', label: '전체 (입력하기)', count: items.length }
+              { value: 'all', label: '전체 (입력하기)', count: showExcluded ? items.length : items.length - hiddenCount }
             ]}
           />
           <Select value={year} onChange={(e) => setYear(e.target.value)}>
@@ -176,6 +184,12 @@ export function Purchases() {
             <option value="saved">아낀 금액 많은순</option>
             <option value="name">이름순</option>
           </Select>
+          {show === 'all' && hiddenCount > 0 && (
+            <label className="inline-flex items-center gap-2 text-[13px] text-muted" title="무료 배포로 받은 게임, 안 한 게임 등 설정에서 통계 제외로 정한 게임">
+              <input type="checkbox" className="accent-[var(--brand)]" checked={showExcluded} onChange={(e) => setShowExcluded(e.target.checked)} />
+              통계 제외 게임도 보기 ({hiddenCount})
+            </label>
+          )}
           <span className="ml-auto text-[13px] text-faint">{rows.length}건</span>
         </div>
 

@@ -43,6 +43,7 @@ const methodMap: Record<ApiMethod, true> = {
   assignImported: true,
   getPurchases: true,
   resetPurchases: true,
+  factoryReset: true,
   storeStatus: true,
   storeLogin: true,
   storeLogout: true,

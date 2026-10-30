@@ -27,7 +27,7 @@ import { useStore, type Page } from '@/lib/store'
 const NAV: { page: Page; label: string; icon: ReactNode }[] = [
   { page: 'dashboard', label: '대시보드', icon: <LuLayoutDashboard /> },
   { page: 'library', label: '라이브러리', icon: <LuLibrary /> },
-  { page: 'backlog', label: '백로그', icon: <LuHourglass /> },
+  { page: 'backlog', label: '밀린 게임', icon: <LuHourglass /> },
   { page: 'money', label: '가격·지출', icon: <LuWallet /> },
   { page: 'purchases', label: '구매 기록', icon: <LuReceipt /> },
   { page: 'deals', label: '할인·위시리스트', icon: <LuTag /> },

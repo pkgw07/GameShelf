@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.3.0'
+export const APP_VERSION = '1.4.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'
@@ -171,8 +171,12 @@ export interface Settings {
   /** 이 시간(분) 미만으로 플레이한 게임을 "안 한 게임"으로 판정 */
   unplayedMinutes: number
   excludeFree: boolean
+  /** 무료 배포로 받은 게임(역대 최저가 0원, 구매가 없음)을 통계에서 제외 */
+  excludeGiveaway: boolean
   excludeUnplayed: boolean
   excludedGenres: string[]
+  /** 화면 확대 비율 (글자 크기). 1 = 1.3 이전 크기 */
+  uiScale: number
   theme: 'system' | 'light' | 'dark'
   minimizeToTray: boolean
   launchAtLogin: boolean
@@ -188,14 +192,19 @@ export interface Settings {
   notifyHistoricalLow: boolean
 }
 
+/** 설정에서 고를 수 있는 글자 크기 (화면 확대 비율) */
+export const UI_SCALES = [1, 1.1, 1.15, 1.25, 1.35]
+
 export const DEFAULT_SETTINGS: Settings = {
   steamApiKey: '',
   steamId: '',
   itadApiKey: '',
   unplayedMinutes: 30,
   excludeFree: true,
+  excludeGiveaway: true,
   excludeUnplayed: false,
   excludedGenres: [],
+  uiScale: 1.15,
   theme: 'system',
   minimizeToTray: true,
   launchAtLogin: false,
@@ -294,6 +303,12 @@ export interface PriceInspection {
   itadAvailable: boolean
   notes: string[]
   review: ReviewInfo | null
+  /** 상점 소개 (한국어가 있으면 한국어) */
+  description: string | null
+  releaseDate: string | null
+  developers: string[]
+  /** 스크린샷 썸네일 / 원본 */
+  screenshots: { thumb: string; full: string }[]
 }
 
 export interface GenreWeight {

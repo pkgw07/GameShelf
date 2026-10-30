@@ -36,7 +36,7 @@ export function Backlog() {
     })
   }, [included])
 
-  // ── 백로그 소진 예상
+  // ── 밀린 게임 소진 예상
   const backlog = useMemo(() => {
     const open = included.filter((g) => !DONE_STATUSES.has(g.status))
     let remain = 0
@@ -67,9 +67,9 @@ export function Backlog() {
 
   return (
     <>
-      <TopBar title="백로그" />
+      <TopBar title="밀린 게임" />
       <PageBody className="space-y-5">
-        <Panel title="백로그를 다 하려면">
+        <Panel title="밀린 게임을 다 하려면">
           <div className="grid grid-cols-4 gap-5">
             <Stat label="아직 안 끝낸 게임" value={`${backlog.open}개`} sub="클리어·100%·포기 제외" />
             <Stat label="남은 플레이 시간" value={hoursFromH(backlog.remain)} sub={`엔딩 시간이 있는 ${backlog.withTime}개 기준`} />

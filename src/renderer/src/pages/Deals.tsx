@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { LuSearch } from 'react-icons/lu'
 import { dealVerdict, VERDICT_LABELS, type DealVerdict } from '@shared/analytics'
 import type { LowInfo, PriceInfo, ReviewInfo } from '@shared/types'
 import { Cover, LowLine, PriceLine, ReviewBadge, VERDICT_TONE } from '@/components/game'
@@ -8,6 +9,8 @@ import { dateKo, parseWon, usd, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
 interface DealRow {
+  /** 검색용 (한국어·영어 이름) */
+  search: string
   key: string
   appid: number
   name: string
@@ -25,9 +28,11 @@ interface DealRow {
 const VERDICT_ORDER: DealVerdict[] = ['lowest', 'near', 'wait', 'notOnSale', 'unknown']
 
 export function Deals() {
-  const { wishlist, games, openGame } = useStore()
+  const { wishlist, games, openGame, openApp } = useStore()
   const [tab, setTab] = useState<'wish' | 'owned'>('wish')
   const [saleOnly, setSaleOnly] = useState(false)
+  const [q, setQ] = useState('')
+  const needle = q.trim().toLowerCase()
 
   const wishRows: DealRow[] = useMemo(
     () =>
@@ -35,6 +40,7 @@ export function Deals() {
         key: w.key,
         appid: w.appid,
         name: w.name,
+        search: w.name.toLowerCase(),
         image: w.headerImage,
         priceKr: w.priceKr,
         priceUs: w.priceUs,
@@ -55,6 +61,7 @@ export function Deals() {
           key: g.key,
           appid: g.appid!,
           name: g.nameKo || g.name,
+          search: `${g.nameKo ?? ''} ${g.name}`.toLowerCase(),
           image: g.headerImage,
           priceKr: g.priceKr,
           priceUs: g.priceUs,
@@ -69,7 +76,7 @@ export function Deals() {
   )
 
   const rows = (tab === 'wish' ? wishRows : ownedRows)
-    .filter((r) => !saleOnly || (r.priceKr && r.priceKr.discount > 0))
+    .filter((r) => (!saleOnly || (r.priceKr && r.priceKr.discount > 0)) && (!needle || r.search.includes(needle)))
     .sort(
       (a, b) =>
         VERDICT_ORDER.indexOf(a.verdict) - VERDICT_ORDER.indexOf(b.verdict) || (b.priceKr?.discount ?? 0) - (a.priceKr?.discount ?? 0)
@@ -82,6 +89,10 @@ export function Deals() {
       <TopBar title="할인 · 위시리스트" />
       <PageBody className="space-y-4">
         <div className="flex flex-wrap items-center gap-4">
+          <div className="relative">
+            <LuSearch className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-faint" />
+            <Input className="w-56 pl-9" placeholder="게임 이름 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
           <Segmented<'wish' | 'owned'>
             value={tab}
             onChange={setTab}
@@ -103,8 +114,16 @@ export function Deals() {
           <p className="text-[13px] text-muted">이미 가진 게임의 할인 정보입니다. 선물하거나 친구에게 추천할 때 참고하세요.</p>
         )}
         {!rows.length ? (
-          <Empty title={tab === 'wish' ? '위시리스트가 비어 있거나 아직 불러오지 않았습니다' : '지금 할인 중인 보유 게임이 없습니다'}>
-            {tab === 'wish' && 'Steam 프로필의 위시리스트가 공개되어 있어야 불러올 수 있습니다. 동기화 후 다시 확인해 주세요.'}
+          <Empty
+            title={
+              needle || saleOnly
+                ? '조건에 맞는 게임이 없습니다'
+                : tab === 'wish'
+                  ? '위시리스트가 비어 있거나 아직 불러오지 않았습니다'
+                  : '지금 할인 중인 보유 게임이 없습니다'
+            }
+          >
+            {tab === 'wish' && !needle && !saleOnly && 'Steam 프로필의 위시리스트가 공개되어 있어야 불러올 수 있습니다. 동기화 후 다시 확인해 주세요.'}
           </Empty>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-line bg-surface">
@@ -118,7 +137,7 @@ export function Deals() {
                       type="button"
                       className="block max-w-full truncate text-left text-[14px] font-semibold text-ink hover:underline"
                       onClick={() =>
-                        r.owned ? openGame(r.key) : void window.api.openExternal(`https://store.steampowered.com/app/${r.appid}/`)
+                        r.owned ? openGame(r.key) : openApp(r.appid)
                       }
                     >
                       {r.name}

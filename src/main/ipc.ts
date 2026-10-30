@@ -144,6 +144,35 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       return { ok: true, path: file, message: `${n}개 항목의 ${scope === 'all' ? '구매가·구매일' : '가져온 구매가'}을 지웠습니다. 지우기 전 데이터는 데이터 폴더의 backups에 보관했습니다.` }
     },
 
+    factoryReset: async (scope) => {
+      const prev = settings.get()
+      await hooks.store.logout()
+      if (scope === 'accounts') {
+        const next = settings.save({ steamApiKey: '', steamId: '', itadApiKey: '' })
+        cachedProfile = null
+        hooks.onSettingsChanged(prev, next)
+        return { ok: true, path: null, message: 'API 키, Steam 계정 연결, Steam 로그인을 지웠습니다. 게임·가격·구매 기록은 그대로 있습니다.' }
+      }
+      // 전체: 지우기 직전 데이터를 백업해 두고 DB 를 지운 뒤 다시 시작
+      const dir = join(dirname(core.dbPath), 'backups')
+      mkdirSync(dir, { recursive: true })
+      const file = join(dir, `before-factory-reset-${new Date().toISOString().replace(/[:.]/g, '-')}.db`)
+      core.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
+      core.close()
+      for (const ext of ['', '-wal', '-shm']) {
+        try {
+          unlinkSync(core.dbPath + ext)
+        } catch {
+          // 없으면 무시
+        }
+      }
+      setTimeout(() => {
+        app.relaunch()
+        app.exit(0)
+      }, 300)
+      return { ok: true, path: file, message: '모든 데이터를 지웠습니다. 프로그램을 처음 상태로 다시 시작합니다.' }
+    },
+
     storeStatus: () => hooks.store.status(settings.get().steamId),
     storeLogin: async () => {
       await hooks.store.login(hooks.getWindow())

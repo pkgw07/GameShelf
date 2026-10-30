@@ -71,6 +71,8 @@ export interface GameShelfApi {
   assignImported(key: string, amount: number | null, date: string | null): Promise<void>
   getPurchases(): Promise<PurchaseRecord[]>
   resetPurchases(scope: 'imported' | 'all'): Promise<BackupResult>
+  /** accounts: API 키·계정 연결·Steam 로그인만 지움 / all: 모든 데이터를 지우고 다시 시작 (지우기 전 자동 백업) */
+  factoryReset(scope: 'accounts' | 'all'): Promise<BackupResult>
   /** 프로그램 안 Steam 스토어 로그인 */
   storeStatus(): Promise<StoreStatus>
   storeLogin(): Promise<StoreStatus>

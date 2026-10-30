@@ -47,6 +47,9 @@ interface Store {
   updateGame(key: string, patch: UserDataPatch): Promise<void>
   openGame(key: string | null): void
   openKey: string | null
+  /** 상점 게임 상세 창 (보유 게임이면 라이브러리 상세 창) */
+  openApp(appid: number | null): void
+  openAppId: number | null
   dark: boolean
   toast(text: string, tone?: Toast['tone']): void
   toasts: Toast[]
@@ -84,6 +87,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [nowPlaying, setNowPlaying] = useState<NowPlaying | null>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
   const [openKey, setOpenKey] = useState<string | null>(null)
+  const [openAppId, setOpenAppId] = useState<number | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
   const systemDark = useSystemDark()
@@ -186,6 +190,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateGame,
     openGame: setOpenKey,
     openKey,
+    openApp: (appid: number | null) => {
+      if (appid != null && games.some((g) => g.key === `steam:${appid}`)) {
+        setOpenAppId(null)
+        setOpenKey(`steam:${appid}`)
+      } else setOpenAppId(appid)
+    },
+    openAppId,
     dark,
     toast,
     toasts
