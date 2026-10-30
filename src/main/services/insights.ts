@@ -120,12 +120,25 @@ export class Insights {
 
     let pool = this.repo.recoPool()
     const stale = !pool.length || Date.now() - pool[0].fetchedAt > 7 * 86_400_000
-    if ((refreshPool || stale) && profile.length) {
+    const genreIds = profile.filter((p) => genreById(p.id)?.spy).slice(0, 5).map((p) => p.id)
+    if (profile.length && (refreshPool || !pool.length)) {
+      // 직접 새로 고침했거나 후보가 하나도 없을 때만 기다린다
       try {
-        pool = await this.buildPool(profile.filter((p) => genreById(p.id)?.spy).slice(0, 5).map((p) => p.id))
+        pool = await this.buildPool(genreIds)
       } catch (e) {
         error = `추천 후보를 불러오지 못했습니다: ${(e as Error).message}`
       }
+    } else if (profile.length && stale && !this.poolBuilding) {
+      // 오래된 후보는 일단 그대로 보여 주고 뒤에서 새로 받는다 (다음에 열 때 반영)
+      this.poolBuilding = this.buildPool(genreIds)
+        .catch(() => [])
+        .finally(() => {
+          this.poolBuilding = null
+          this.recoCache = null
+        }) as Promise<unknown>
+    }
+    if (!refreshPool && this.recoCache && Date.now() - this.recoCache.at < 10 * 60_000 && this.recoCache.poolAt === (pool[0]?.fetchedAt ?? 0)) {
+      return this.recoCache.v
     }
 
     const owned = new Set(games.map((g) => g.appid).filter((x): x is number => x != null))
@@ -158,7 +171,9 @@ export class Insights {
       try {
         const prices = await getPricesBatch(
           top.map((t) => t.appid),
-          'kr'
+          'kr',
+          undefined,
+          limiters.steamStoreUi
         )
         for (const t of top) {
           const p = prices.get(t.appid)
@@ -192,19 +207,37 @@ export class Insights {
       .slice(0, 12)
 
     const poolAt = pool[0]?.fetchedAt ?? null
-    return { profile: profile.slice(0, 12), candidates: top, backlog, poolFetchedAt: poolAt, error }
+    const result: RecommendationResult = { profile: profile.slice(0, 12), candidates: top, backlog, poolFetchedAt: poolAt, error }
+    if (!error) this.recoCache = { at: Date.now(), poolAt: pool[0]?.fetchedAt ?? 0, v: result }
+    return result
   }
 
   /** SteamSpy 장르별 목록에서 평가가 좋은 게임만 후보로 저장 */
+  private poolBuilding: Promise<unknown> | null = null
+  private recoCache: { at: number; poolAt: number; v: RecommendationResult } | null = null
+
   private async buildPool(genreIds: string[]) {
     const merged = new Map<number, { appid: number; name: string; genres: string[]; positive: number; negative: number }>()
-    for (const id of genreIds) {
-      const g = genreById(id)
-      if (!g) continue
-      const r = await request<Record<string, { appid: number; name: string; positive: number; negative: number }>>(
-        `https://steamspy.com/api.php?request=genre&genre=${encodeURIComponent(g.en)}`,
-        { limiter: limiters.steamspy, timeoutMs: 90_000 }
-      )
+    // 장르별 목록을 동시에 받는다 (요청 시작만 1.1초 간격, 내려받기는 겹쳐서)
+    const lists = await Promise.all(
+      genreIds.map(async (id) => {
+        const g = genreById(id)
+        if (!g) return null
+        try {
+          const r = await request<Record<string, { appid: number; name: string; positive: number; negative: number }>>(
+            `https://steamspy.com/api.php?request=genre&genre=${encodeURIComponent(g.en)}`,
+            { limiter: limiters.steamspy, timeoutMs: 90_000 }
+          )
+          return { g, r }
+        } catch {
+          return null
+        }
+      })
+    )
+    if (genreIds.length && lists.every((x) => x == null)) throw new Error('SteamSpy 응답이 없습니다.')
+    for (const item of lists) {
+      if (!item) continue
+      const { g, r } = item
       for (const v of Object.values(r ?? {})) {
         const reviews = (v.positive ?? 0) + (v.negative ?? 0)
         if (reviews < 2000 || v.positive / reviews < 0.75 || !v.name) continue
@@ -219,18 +252,70 @@ export class Insights {
   }
 
   // ───────── 가격 검색 (보유하지 않은 게임 포함) ─────────
-  async inspectPrice(appid: number): Promise<PriceInspection> {
+  private inspectCache = new Map<number, { at: number; v: Promise<PriceInspection> }>()
+
+  /** 가격 검색·상세 창. 같은 게임은 15분 동안 다시 받지 않는다 */
+  inspectPrice(appid: number): Promise<PriceInspection> {
+    const hit = this.inspectCache.get(appid)
+    if (hit && Date.now() - hit.at < 15 * 60_000) return hit.v
+    const v = this.inspectPriceFresh(appid)
+    this.inspectCache.set(appid, { at: Date.now(), v })
+    v.catch(() => this.inspectCache.delete(appid))
+    if (this.inspectCache.size > 80) this.inspectCache.delete(this.inspectCache.keys().next().value as number)
+    return v
+  }
+
+  private async inspectPriceFresh(appid: number): Promise<PriceInspection> {
     const s = this.getSettings()
     const notes: string[] = []
-    const { app, priceKr, extra } = await getAppDetails(appid)
+    const ui = limiters.steamStoreUi
+    // 서로 기다릴 필요가 없는 요청은 한꺼번에 보낸다
+    const detailsP = getAppDetails(appid, undefined, ui)
+    const usP = getPricesBatch([appid], 'us', undefined, ui).then(
+      (m) => m.get(appid) ?? null,
+      () => {
+        notes.push('미국 가격을 불러오지 못했습니다.')
+        return null
+      }
+    )
+    const reviewP = getStoreItems([appid])
+      .then((m) => m.get(appid)?.review ?? null)
+      .catch(() => null)
+      .then(async (r) => r ?? this.repo.getReview(appid) ?? (await getAppReview(appid).catch(() => null)))
+    const itadP = (async () => {
+      if (!s.itadApiKey) {
+        notes.push('설정에서 IsThereAnyDeal API 키를 넣으면 역대 최저가와 할인 이력을 볼 수 있습니다.')
+        return { available: false, hk: [] as PricePoint[], hu: [] as PricePoint[] }
+      }
+      try {
+        const itadId = await this.itadId(s.itadApiKey, appid)
+        if (!itadId) {
+          notes.push('IsThereAnyDeal에서 이 게임을 찾지 못했습니다.')
+          return { available: false, hk: [], hu: [] }
+        }
+        const [lowKr, lowUs, hk, hu] = await Promise.all([
+          steamStoreLows(s.itadApiKey, [itadId], 'kr'),
+          steamStoreLows(s.itadApiKey, [itadId], 'us'),
+          steamHistory(s.itadApiKey, itadId, 'kr'),
+          steamHistory(s.itadApiKey, itadId, 'us')
+        ])
+        const lk = lowKr.get(itadId)
+        const lu = lowUs.get(itadId)
+        if (lk) this.repo.saveLow(appid, 'kr', lk)
+        if (lu) this.repo.saveLow(appid, 'us', lu)
+        if (!hk.length) notes.push('한국 가격 이력이 IsThereAnyDeal에 없어 프로그램이 기록한 값만 표시합니다.')
+        return { available: true, hk, hu }
+      } catch (e) {
+        notes.push(`역대 가격을 불러오지 못했습니다: ${(e as Error).message}`)
+        return { available: false, hk: [], hu: [] }
+      }
+    })()
+
+    const [{ app, priceKr, extra }, priceUs, review, itad] = await Promise.all([detailsP, usP, reviewP, itadP])
     if (app.status === 'ok') this.repo.upsertSteamApp(app)
     else notes.push('한국 상점에서 판매하지 않거나 정보를 받을 수 없는 게임입니다.')
-    let priceUs = null
-    try {
-      priceUs = (await getPricesBatch([appid], 'us')).get(appid) ?? null
-    } catch {
-      notes.push('미국 가격을 불러오지 못했습니다.')
-    }
+    if (review) this.repo.saveReview(appid, review)
+
     const now = Date.now()
     const owned = this.repo.ownedSteamAppids().includes(appid)
     const inWishlist = this.repo.wishlistAppids().includes(appid)
@@ -239,44 +324,8 @@ export class Insights {
       if (app.status === 'ok') this.repo.savePrice(appid, 'kr', priceKr)
       this.repo.savePrice(appid, 'us', priceUs)
     }
-
-    let historyKr: PricePoint[] = this.repo.priceHistory(appid, 'kr')
-    let historyUs: PricePoint[] = this.repo.priceHistory(appid, 'us')
-    let itadAvailable = false
-    if (s.itadApiKey) {
-      try {
-        const itadId = await this.itadId(s.itadApiKey, appid)
-        if (itadId) {
-          itadAvailable = true
-          const [lowKr, lowUs] = await Promise.all([
-            steamStoreLows(s.itadApiKey, [itadId], 'kr'),
-            steamStoreLows(s.itadApiKey, [itadId], 'us')
-          ])
-          const lk = lowKr.get(itadId)
-          const lu = lowUs.get(itadId)
-          if (lk) this.repo.saveLow(appid, 'kr', lk)
-          if (lu) this.repo.saveLow(appid, 'us', lu)
-          const [hk, hu] = await Promise.all([steamHistory(s.itadApiKey, itadId, 'kr'), steamHistory(s.itadApiKey, itadId, 'us')])
-          historyKr = [...hk, ...historyKr]
-          historyUs = [...hu, ...historyUs]
-          if (!hk.length) notes.push('한국 가격 이력이 IsThereAnyDeal에 없어 프로그램이 기록한 값만 표시합니다.')
-        } else notes.push('IsThereAnyDeal에서 이 게임을 찾지 못했습니다.')
-      } catch (e) {
-        notes.push(`역대 가격을 불러오지 못했습니다: ${(e as Error).message}`)
-      }
-    } else {
-      notes.push('설정에서 IsThereAnyDeal API 키를 넣으면 역대 최저가와 할인 이력을 볼 수 있습니다.')
-    }
-
-    let review = this.repo.getReview(appid)
-    try {
-      const it = (await getStoreItems([appid])).get(appid)
-      if (it?.review) review = it.review
-      else review = review ?? (await getAppReview(appid))
-      if (review) this.repo.saveReview(appid, review)
-    } catch {
-      // 평가 없이 표시
-    }
+    const historyKr: PricePoint[] = [...itad.hk, ...this.repo.priceHistory(appid, 'kr')]
+    const historyUs: PricePoint[] = [...itad.hu, ...this.repo.priceHistory(appid, 'us')]
 
     const pk = app.status === 'ok' && priceKr ? { ...priceKr, fetchedAt: now } : null
     const pu = priceUs ? { ...priceUs, fetchedAt: now } : null
@@ -291,15 +340,15 @@ export class Insights {
       lowUs: this.lowFrom(appid, 'us', pu, historyUs),
       historyKr,
       historyUs,
+      owned,
+      inWishlist,
+      itadAvailable: itad.available,
+      notes,
+      review: review ?? null,
       description: extra?.description ?? null,
       releaseDate: app.status === 'ok' ? (app.releaseDate ?? null) : null,
       developers: extra?.developers ?? [],
-      screenshots: extra?.screenshots ?? [],
-      owned,
-      inWishlist,
-      itadAvailable,
-      notes,
-      review
+      screenshots: extra?.screenshots ?? []
     }
   }
 

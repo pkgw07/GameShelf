@@ -1,7 +1,7 @@
 // Steam Web API + Steam 상점 API
 import type { GenreRef, PriceInfo, ProfileInfo, ReviewInfo, Settings, StoreSearchResult } from '@shared/types'
 import type { AchInput, OwnedGameInput, SteamAppInput } from '../db/repo'
-import { HttpError, limiters, request } from '../util/http'
+import { HttpError, limiters, request, type RateLimiter } from '../util/http'
 import type { PlatformProvider, ProviderContext } from './types'
 
 const API = 'https://api.steampowered.com'
@@ -191,11 +191,12 @@ interface AppDetailsData {
 /** 상세 정보 (한국 상점, 한국어). 한국 가격도 함께 돌려준다 */
 export async function getAppDetails(
   appid: number,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  limiter: RateLimiter = limiters.steamStore
 ): Promise<{ app: SteamAppInput; priceKr: Omit<PriceInfo, 'fetchedAt'> | null; extra?: AppExtra }> {
   const r = await request<Record<string, { success: boolean; data?: AppDetailsData }>>(
     `${STORE}/api/appdetails?${q({ appids: appid, cc: 'kr', l: 'koreana' })}`,
-    { limiter: limiters.steamStore, signal }
+    { limiter, signal }
   )
   const entry = r?.[String(appid)]
   if (!entry?.success || !entry.data) {
@@ -250,13 +251,14 @@ function decodeEntities(s: string): string {
 export async function getPricesBatch(
   appids: number[],
   cc: 'kr' | 'us',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  limiter: RateLimiter = limiters.steamStore
 ): Promise<Map<number, Omit<PriceInfo, 'fetchedAt'> | null>> {
   const out = new Map<number, Omit<PriceInfo, 'fetchedAt'> | null>()
   if (!appids.length) return out
   const r = await request<Record<string, { success: boolean; data?: { price_overview?: PriceOverview } | [] }>>(
     `${STORE}/api/appdetails?appids=${appids.join(',')}&${q({ cc, filters: 'price_overview' })}`,
-    { limiter: limiters.steamStore, signal }
+    { limiter, signal }
   )
   for (const id of appids) {
     const e = r?.[String(id)]
@@ -272,7 +274,7 @@ export async function getPricesBatch(
 export async function storeSearch(term: string): Promise<StoreSearchResult[]> {
   const r = await request<{
     items?: { type: string; name: string; id: number; tiny_image?: string; price?: { currency: string; initial: number; final: number } }[]
-  }>(`${STORE}/api/storesearch/?${q({ term, l: 'koreana', cc: 'KR' })}`, { limiter: limiters.steamStore })
+  }>(`${STORE}/api/storesearch/?${q({ term, l: 'koreana', cc: 'KR' })}`, { limiter: limiters.steamStoreUi })
   return (r?.items ?? [])
     .filter((x) => x.type === 'app')
     .map((x) => {

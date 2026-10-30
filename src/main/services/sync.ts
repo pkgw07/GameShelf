@@ -39,6 +39,8 @@ export class SyncService {
   private ctrl: AbortController | null = null
   /** Steam 스토어 로그인 세션 (index.ts 에서 연결) */
   ownedAppsSource: OwnedAppsSource | null = null
+  /** 다른 플랫폼 토큰 갱신 저장 (core 에서 연결) */
+  saveSettings: ((patch: Partial<Settings>) => void) | null = null
   /** 설치 폴더에서 찾은 DLC (테스트에서 바꿔 끼운다) */
   installedDlcSource: OwnedAppsSource = scanInstalledDlc
 
@@ -122,8 +124,19 @@ export class SyncService {
       this.progress('owned', '보유 게임 목록 불러오는 중')
       for (const p of providers) {
         if (!p.isConfigured(s)) continue
-        const list = await p.fetchOwnedGames({ settings: s, signal })
-        this.repo.upsertOwnedGames(p.platform, list)
+        if (p.platform === 'steam') {
+          const list = await p.fetchOwnedGames({ settings: s, signal })
+          this.repo.upsertOwnedGames(p.platform, list)
+          continue
+        }
+        // 다른 플랫폼은 실패해도 Steam 동기화는 계속한다
+        this.progress('owned', `${p.displayName} 게임 목록 불러오는 중`)
+        try {
+          const list = await p.fetchOwnedGames({ settings: s, signal, saveSettings: (patch) => this.saveSettings?.(patch) })
+          this.repo.upsertOwnedGames(p.platform, list)
+        } catch (e) {
+          warn(p.displayName, e)
+        }
       }
       this.dataChanged()
 

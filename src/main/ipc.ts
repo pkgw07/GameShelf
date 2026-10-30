@@ -3,10 +3,12 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync,
 import { basename, dirname, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
-import { APP_VERSION, type BackupResult, type Settings } from '@shared/types'
+import { APP_VERSION, type BackupResult, type PlatformStatus, type Settings } from '@shared/types'
 import type { Core } from './core'
 import type { Updater } from './updater'
 import type { SteamStore } from './services/steamstore'
+import { psnLogin } from './services/psnlogin'
+import { xblAccount } from './providers/xbox'
 import { getPlayerSummary, resolveSteamId, storeSearch, toProfile } from './providers/steam'
 import { applyPurchases, importLicenses, importPurchases } from './services/imports'
 import { recognize } from './services/ocr'
@@ -20,6 +22,11 @@ export interface IpcHooks {
   getWindow(): BrowserWindow | null
   notify(title: string, body: string): void
   store: SteamStore
+}
+
+/** 렌더러에 보낼 설정: 다른 플랫폼 토큰은 연결 여부만 알 수 있게 가린다 */
+function publicSettings(s: Settings): Settings {
+  return { ...s, psnRefreshToken: s.psnRefreshToken ? '•' : '', xblApiKey: s.xblApiKey ? '•' : '' }
 }
 
 function isSqliteFile(path: string): boolean {
@@ -43,16 +50,56 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
     if (!st.matches) throw new Error('프로그램에서 로그인한 Steam 계정이 설정의 계정과 다릅니다. 로그아웃 후 같은 계정으로 로그인해 주세요.')
   }
 
+  const platformStatus = (): PlatformStatus => {
+    const s = settings.get()
+    return {
+      psn: { connected: Boolean(s.psnRefreshToken), account: s.psnAccount || null },
+      xbox: { connected: Boolean(s.xblApiKey), account: s.xblAccount || null }
+    }
+  }
+
   const h: Handlers = {
     getAppInfo: () => ({ version: APP_VERSION, dataPath: dirname(core.dbPath), dbDriver: core.db.driver, platform: process.platform }),
-    getSettings: () => settings.get(),
+    getSettings: () => publicSettings(settings.get()),
     saveSettings: (patch) => {
       const prev = settings.get()
-      const next = settings.save(patch)
+      // 다른 플랫폼 토큰은 전용 메서드로만 바꾼다
+      const { psnRefreshToken: _p, xblApiKey: _x, ...safe } = patch
+      const next = settings.save(safe)
       if (patch.steamId !== undefined && patch.steamId !== prev.steamId) cachedProfile = null
       hooks.onSettingsChanged(prev, next)
-      return next
+      return publicSettings(next)
     },
+
+    getPlatformStatus: () => platformStatus(),
+    psnLogin: async () => {
+      const r = await psnLogin(hooks.getWindow())
+      if (r) settings.save({ psnRefreshToken: r.tokens.refreshToken, psnAccount: r.onlineId ?? 'PlayStation' })
+      return platformStatus()
+    },
+    psnLogout: () => {
+      settings.save({ psnRefreshToken: '', psnAccount: '' })
+      repo.removePlatformGames('psn')
+      return platformStatus()
+    },
+    xblConnect: async (key) => {
+      const k = key.trim()
+      if (!k) throw new Error('API 키를 넣어 주세요.')
+      const account = await xblAccount(k)
+      settings.save({ xblApiKey: k, xblAccount: account })
+      return platformStatus()
+    },
+    xblDisconnect: () => {
+      settings.save({ xblApiKey: '', xblAccount: '' })
+      repo.removePlatformGames('xbox')
+      return platformStatus()
+    },
+    addManualGame: (input) => {
+      if (!input.name.trim()) throw new Error('게임 이름을 넣어 주세요.')
+      return repo.addManualGame(input)
+    },
+    updateManualGame: (key, patch) => repo.updateManualGame(key, patch),
+    deleteManualGame: (key) => repo.deleteManualGame(key),
     resolveSteamId: async (input) => {
       const s = settings.get()
       const id = await resolveSteamId(input, s.steamApiKey)
@@ -148,7 +195,7 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const prev = settings.get()
       await hooks.store.logout()
       if (scope === 'accounts') {
-        const next = settings.save({ steamApiKey: '', steamId: '', itadApiKey: '' })
+        const next = settings.save({ steamApiKey: '', steamId: '', itadApiKey: '', psnRefreshToken: '', psnAccount: '', xblApiKey: '', xblAccount: '' })
         cachedProfile = null
         hooks.onSettingsChanged(prev, next)
         return { ok: true, path: null, message: 'API 키, Steam 계정 연결, Steam 로그인을 지웠습니다. 게임·가격·구매 기록은 그대로 있습니다.' }

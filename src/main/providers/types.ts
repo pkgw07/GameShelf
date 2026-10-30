@@ -6,6 +6,8 @@ import type { OwnedGameInput } from '../db/repo'
 export interface ProviderContext {
   settings: Settings
   signal: AbortSignal
+  /** 갱신된 토큰 등을 저장할 때 */
+  saveSettings?(patch: Partial<Settings>): void
 }
 
 export interface PlatformProvider {

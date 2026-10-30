@@ -137,7 +137,7 @@ export function Deals() {
                       type="button"
                       className="block max-w-full truncate text-left text-[14px] font-semibold text-ink hover:underline"
                       onClick={() =>
-                        r.owned ? openGame(r.key) : openApp(r.appid)
+                        r.owned ? openGame(r.key) : openApp(r.appid, { name: r.name, headerImage: r.image, priceKr: r.priceKr })
                       }
                     >
                       {r.name}

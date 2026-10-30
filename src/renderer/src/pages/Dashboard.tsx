@@ -227,7 +227,7 @@ export function Dashboard() {
                   key={w.appid}
                   type="button"
                   className="self-start text-left"
-                  onClick={() => openApp(w.appid)}
+                  onClick={() => openApp(w.appid, { name: w.name, headerImage: w.headerImage, priceKr: w.priceKr })}
                 >
                   <Cover src={w.headerImage} alt={w.name} className="aspect-[460/215] w-full rounded-lg" />
                   <div className="mt-2 truncate text-[13px] font-medium text-ink">{w.name}</div>

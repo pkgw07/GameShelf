@@ -1,6 +1,6 @@
 import type { Db } from './driver'
 
-export const SCHEMA_VERSION = 3
+export const SCHEMA_VERSION = 4
 
 // 플랫폼 공통 데이터: games, user_data, playtime_snapshots, play_sessions, hltb
 // Steam 전용 데이터: steam_* (appid 기준)
@@ -208,9 +208,29 @@ function hasColumn(db: Db, table: string, col: string): boolean {
   return db.prepare(`PRAGMA table_info(${table})`).all<{ name: string }>().some((c) => c.name === col)
 }
 
+// 1.5: Steam 이외 플랫폼(PlayStation, Xbox, 직접 추가)의 이미지·기기·트로피 등
+const SQL_V4 = `
+CREATE TABLE IF NOT EXISTS ext_game (
+  platform TEXT NOT NULL,
+  game_id TEXT NOT NULL,
+  image TEXT,
+  device TEXT,
+  ach_done INTEGER,
+  ach_total INTEGER,
+  score_done INTEGER,
+  score_total INTEGER,
+  trophies TEXT,
+  playtime_known INTEGER NOT NULL DEFAULT 1,
+  manual INTEGER NOT NULL DEFAULT 0,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (platform, game_id)
+);
+`
+
 export function migrate(db: Db): void {
   db.exec(SQL)
   db.exec(SQL_V2)
+  db.exec(SQL_V4)
   if (!hasColumn(db, 'steam_app', 'dlc')) db.exec(`ALTER TABLE steam_app ADD COLUMN dlc TEXT NOT NULL DEFAULT '[]'`)
   if (!hasColumn(db, 'steam_app', 'parent_appid')) db.exec(`ALTER TABLE steam_app ADD COLUMN parent_appid INTEGER`)
   // 1.1.1: DLC 목록을 받은 시각. 1.0에서 받은 게임 정보에는 DLC 목록이 없어서 다시 받아야 한다

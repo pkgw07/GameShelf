@@ -44,6 +44,8 @@ export class RateLimiter {
 export const limiters = {
   steamApi: new RateLimiter(120),
   steamStore: new RateLimiter(1600),
+  /** 화면에서 바로 보는 요청 (상세 창, 추천 가격). 동기화 줄 뒤에서 기다리지 않도록 따로 둔다 */
+  steamStoreUi: new RateLimiter(350),
   itad: new RateLimiter(350),
   hltb: new RateLimiter(1500),
   steamspy: new RateLimiter(1100)
@@ -59,6 +61,13 @@ export interface RequestOpts {
   signal?: AbortSignal
   /** true 면 텍스트로 받는다 */
   text?: boolean
+  /** application/x-www-form-urlencoded 본문 */
+  form?: Record<string, string>
+}
+
+/** 리다이렉트를 직접 다뤄야 할 때 (테스트에서는 setFetch 로 바뀐 함수를 쓴다) */
+export function rawFetch(url: string, init?: RequestInit): Promise<Response> {
+  return fetchImpl(url, init)
 }
 
 export async function request<T = unknown>(url: string, opts: RequestOpts = {}): Promise<T> {
@@ -76,9 +85,10 @@ export async function request<T = unknown>(url: string, opts: RequestOpts = {}):
           headers: {
             'User-Agent': 'GameShelf/1.0 (+desktop app)',
             ...(opts.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+            ...(opts.form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
             ...opts.headers
           },
-          body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+          body: opts.form ? new URLSearchParams(opts.form).toString() : opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
           signal: ctrl.signal
         })
       } finally {
@@ -112,7 +122,7 @@ export async function request<T = unknown>(url: string, opts: RequestOpts = {}):
         await sleep(1500 * (attempt + 1))
         continue
       }
-      throw new HttpError(res.status, `HTTP ${res.status}: ${url.replace(/key=[^&]+/i, 'key=***')}`)
+      throw new HttpError(res.status, `HTTP ${res.status}: ${url.replace(/key=[^&]+/i, 'key=***').split('?')[0]}`)
     }
     if (opts.text) return (await res.text()) as T
     const txt = await res.text()

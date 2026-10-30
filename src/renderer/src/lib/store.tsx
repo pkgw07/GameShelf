@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { excludeReason, type ExcludeReason } from '@shared/analytics'
-import type { DlcRow, GameRow, NowPlaying, ProfileInfo, Settings, SyncState, UpdateState, UserDataPatch, WishlistRow } from '@shared/types'
+import type { DlcRow, GameRow, NowPlaying, PriceInfo, ProfileInfo, Settings, SyncState, UpdateState, UserDataPatch, WishlistRow } from '@shared/types'
 import type { PricedItem } from '@shared/analytics'
 
 export type Page =
@@ -48,11 +48,19 @@ interface Store {
   openGame(key: string | null): void
   openKey: string | null
   /** 상점 게임 상세 창 (보유 게임이면 라이브러리 상세 창) */
-  openApp(appid: number | null): void
+  openApp(appid: number | null, preview?: AppPreview): void
   openAppId: number | null
+  /** 상세 창을 열자마자 보여 줄 정보 (이름·사진·가격) */
+  openAppPreview: AppPreview | null
   dark: boolean
   toast(text: string, tone?: Toast['tone']): void
   toasts: Toast[]
+}
+
+export interface AppPreview {
+  name: string
+  headerImage: string
+  priceKr: PriceInfo | null
 }
 
 const Ctx = createContext<Store | null>(null)
@@ -88,6 +96,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [update, setUpdate] = useState<UpdateState | null>(null)
   const [openKey, setOpenKey] = useState<string | null>(null)
   const [openAppId, setOpenAppId] = useState<number | null>(null)
+  const [openAppPreview, setOpenAppPreview] = useState<AppPreview | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const toastId = useRef(0)
   const systemDark = useSystemDark()
@@ -190,13 +199,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     updateGame,
     openGame: setOpenKey,
     openKey,
-    openApp: (appid: number | null) => {
+    openApp: (appid: number | null, preview?: AppPreview) => {
       if (appid != null && games.some((g) => g.key === `steam:${appid}`)) {
         setOpenAppId(null)
         setOpenKey(`steam:${appid}`)
-      } else setOpenAppId(appid)
+      } else {
+        setOpenAppPreview(preview ?? null)
+        setOpenAppId(appid)
+      }
     },
     openAppId,
+    openAppPreview,
     dark,
     toast,
     toasts

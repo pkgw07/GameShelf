@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { LuCheck, LuKeyRound, LuTrash2, LuDatabase, LuDownload, LuEye, LuEyeOff, LuFolderOpen, LuUpload } from 'react-icons/lu'
+import { LuCheck, LuLogIn, LuPlus, LuKeyRound, LuTrash2, LuDatabase, LuDownload, LuEye, LuEyeOff, LuFolderOpen, LuUpload } from 'react-icons/lu'
 import { isGiveaway } from '@shared/analytics'
 import { GENRES } from '@shared/genres'
-import { DEFAULT_SETTINGS, UI_SCALES, type AppInfo, type Settings as S } from '@shared/types'
+import { DEFAULT_SETTINGS, UI_SCALES, type AppInfo, type PlatformStatus, type Settings as S } from '@shared/types'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Field, Input, Panel, Segmented, Spinner, Switch } from '@/components/ui'
+import { ManualGameDialog } from '@/components/ManualGameDialog'
 import { STORE_LOGIN_NOTE, StoreLoginRow, useSteamImport } from '@/components/SteamConnect'
 import { cn } from '@/lib/cn'
 import { relative } from '@/lib/format'
@@ -159,6 +160,8 @@ export function Settings() {
         </Panel>
 
         <StoreLoginPanel />
+
+        <PlatformsPanel />
 
         <Panel title="가격 데이터">
           <div className="space-y-4">
@@ -491,6 +494,120 @@ function ResetPanel() {
           </div>
         )}
       </div>
+    </Panel>
+  )
+}
+
+function PlatformsPanel() {
+  const { toast } = useStore()
+  const [st, setSt] = useState<PlatformStatus | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [key, setKey] = useState('')
+  const [adding, setAdding] = useState(false)
+  useEffect(() => {
+    void window.api.getPlatformStatus().then(setSt)
+  }, [])
+  const act = async (label: string, fn: () => Promise<PlatformStatus>, ok?: (s: PlatformStatus) => string | null) => {
+    setBusy(label)
+    try {
+      const r = await fn()
+      setSt(r)
+      const msg = ok?.(r)
+      if (msg) {
+        toast(msg)
+        void window.api.startSync()
+      }
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+  const ext = (url: string) => () => void window.api.openExternal(url)
+  if (!st) return null
+  return (
+    <Panel title="다른 플랫폼">
+      <div className="divide-y divide-line text-[13px]">
+        <div className="pb-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="w-24 font-semibold text-ink">PlayStation</span>
+            {st.psn.connected ? (
+              <>
+                <Badge tone="brand">연결됨</Badge>
+                <span className="text-muted">{st.psn.account}</span>
+                <Button size="sm" variant="ghost" className="ml-auto" disabled={busy != null} onClick={() => void act('psn', window.api.psnLogout)}>
+                  연결 끊기
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                className="ml-auto"
+                icon={busy === 'psn' ? <Spinner /> : <LuLogIn />}
+                disabled={busy != null}
+                onClick={() => void act('psn', window.api.psnLogin, (r) => (r.psn.connected ? 'PlayStation을 연결했습니다. 동기화를 시작합니다.' : null))}
+              >
+                PlayStation 로그인
+              </Button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[12px] text-faint">
+            PS4·PS5 플레이타임과 트로피(PS3·Vita 포함)를 가져옵니다. 열린 창에서 Sony 계정으로 로그인하면 자동으로 닫힙니다. 비밀번호는 Sony 페이지에만 입력되고, 프로그램은 로그인 유지용 토큰만 암호화해 저장합니다(약 2달마다 다시 로그인). PlayStation 앱과 같은 비공식 방식이라 Sony가 바꾸면 잠시 안 될 수 있습니다.
+          </p>
+        </div>
+        <div className="py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="w-24 font-semibold text-ink">Xbox</span>
+            {st.xbox.connected ? (
+              <>
+                <Badge tone="brand">연결됨</Badge>
+                <span className="text-muted">{st.xbox.account}</span>
+                <Button size="sm" variant="ghost" className="ml-auto" disabled={busy != null} onClick={() => void act('xbox', window.api.xblDisconnect)}>
+                  연결 끊기
+                </Button>
+              </>
+            ) : (
+              <>
+                <Input className="min-w-0 flex-1" placeholder="OpenXBL API 키" value={key} onChange={(e) => setKey(e.target.value)} />
+                <Button
+                  size="sm"
+                  icon={busy === 'xbox' ? <Spinner /> : <LuCheck />}
+                  disabled={busy != null || !key.trim()}
+                  onClick={() =>
+                    void act('xbox', () => window.api.xblConnect(key), (r) => {
+                      setKey('')
+                      return `Xbox(${r.xbox.account})를 연결했습니다. 동기화를 시작합니다.`
+                    })
+                  }
+                >
+                  연결
+                </Button>
+              </>
+            )}
+          </div>
+          <p className="mt-1.5 text-[12px] text-faint">
+            <button type="button" className="text-brand underline" onClick={ext('https://xbl.io/')}>
+              xbl.io
+            </button>
+            에서 Xbox 계정으로 로그인한 뒤 API 키를 만들어 넣으세요(무료). 플레이한 게임, 도전과제, 게이머스코어, 마지막 플레이 날짜를 가져옵니다. Xbox는 플레이타임을 공개하지 않아 시간은 비어 있습니다.
+          </p>
+        </div>
+        <div className="pt-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="w-24 font-semibold text-ink">Switch · 기타</span>
+            <Button size="sm" className="ml-auto" icon={<LuPlus />} onClick={() => setAdding(true)}>
+              게임 직접 추가
+            </Button>
+          </div>
+          <p className="mt-1.5 text-[12px] text-faint">
+            Nintendo는 게임 목록을 가져올 수 있는 공개 방법이 없어 직접 추가합니다. 디스크 게임이나 다른 런처(Epic 등) 게임도 같은 방법으로 넣을 수 있고, 라이브러리의 "게임 추가" 버튼으로도 됩니다.
+          </p>
+          {adding && <ManualGameDialog onClose={() => setAdding(false)} />}
+        </div>
+      </div>
+      <p className="mt-4 text-[12px] text-faint">
+        연결한 플랫폼은 동기화할 때 함께 불러옵니다. 연결을 끊으면 그 플랫폼에서 받아 온 게임은 목록에서 빠지고, 입력한 구매가·메모·상태는 남아 있다가 다시 연결하면 돌아옵니다.
+      </p>
     </Panel>
   )
 }

@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LuLayoutGrid, LuList, LuSearch } from 'react-icons/lu'
+import { LuLayoutGrid, LuList, LuPlus, LuSearch } from 'react-icons/lu'
 import { costPerHour, EXCLUDE_LABELS, hltbRemaining, isUnplayed } from '@shared/analytics'
 import { GENRES } from '@shared/genres'
-import { STATUS_LABELS, STATUS_ORDER, type GameRow, type GameStatus } from '@shared/types'
+import { PLATFORM_LABELS, STATUS_LABELS, STATUS_ORDER, type GameRow, type GameStatus, type Platform } from '@shared/types'
 import { Cover, LowLine, PriceLine, ReviewBadge, StatusBadge } from '@/components/game'
+import { ManualGameDialog } from '@/components/ManualGameDialog'
 import { OwnedDlcButton } from '@/components/SteamConnect'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Progress, Segmented, Select } from '@/components/ui'
 import { cn } from '@/lib/cn'
+import { deviceLabel, groupAcrossPlatforms, type GameGroup } from '@/lib/platforms'
 import { hours, hoursFromH, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
 
@@ -73,6 +75,11 @@ export function Library() {
   const [view, setView] = useState<'grid' | 'table'>('grid')
   const [limit, setLimit] = useState(PAGE)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [platform, setPlatform] = useState<Platform | 'any'>('any')
+  const [merge, setMerge] = useState(true)
+  const [adding, setAdding] = useState(false)
+  const platforms = useMemo(() => [...new Set(games.map((g) => g.platform))], [games])
+  const multi = platforms.length > 1
   const [minText, setMinText] = useState(String(settings?.unplayedMinutes ?? 30))
   useEffect(() => setMinText(String(settings?.unplayedMinutes ?? 30)), [settings?.unplayedMinutes])
 
@@ -97,14 +104,21 @@ export function Library() {
         if (filter === 'unplayed' && !isUnplayed(g, unplayedMin)) return false
         if (filter === 'sale' && !(g.priceKr && g.priceKr.discount > 0)) return false
         if (filter === 'excluded' && !excludeOf(g)) return false
+        if (platform !== 'any' && g.platform !== platform) return false
         if (status !== 'any' && g.status !== status) return false
         if (genre !== 'any' && !g.genres.some((x) => x.id === genre)) return false
         return true
       })
       .sort(sortFn(sort))
-  }, [games, q, filter, status, genre, sort, unplayedMin, excludeOf])
+  }, [games, q, filter, status, genre, sort, unplayedMin, excludeOf, platform])
 
-  useEffect(() => setLimit(PAGE), [q, filter, status, genre, sort])
+  // 여러 플랫폼에 있는 같은 게임은 한 장의 카드로
+  const groups: GameGroup[] = useMemo(
+    () => (multi && merge ? groupAcrossPlatforms(list) : list.map((g) => ({ primary: g, all: [g] }))),
+    [list, multi, merge]
+  )
+
+  useEffect(() => setLimit(PAGE), [q, filter, status, genre, sort, platform, merge])
 
   const toggle = (key: string) =>
     setSelected((s) => {
@@ -121,11 +135,20 @@ export function Library() {
     setSelected(new Set())
   }
 
-  const shown = list.slice(0, limit)
+  const shownGroups = groups.slice(0, limit)
+  const shown = shownGroups.map((x) => x.primary)
 
   return (
     <>
-      <TopBar title="라이브러리" />
+      <TopBar
+        title="라이브러리"
+        actions={
+          <Button icon={<LuPlus />} onClick={() => setAdding(true)} title="Switch, 디스크 게임, 다른 런처 게임 등">
+            게임 추가
+          </Button>
+        }
+      />
+      {adding && <ManualGameDialog onClose={() => setAdding(false)} />}
       <PageBody className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
@@ -156,6 +179,16 @@ export function Library() {
         </div>
         {filter !== 'dlc' && (
         <div className="flex flex-wrap items-center gap-2 text-[13px]">
+          {multi && (
+            <Select value={platform} onChange={(e) => setPlatform(e.target.value as Platform | 'any')}>
+              <option value="any">모든 플랫폼</option>
+              {platforms.map((p) => (
+                <option key={p} value={p}>
+                  {PLATFORM_LABELS[p]} ({games.filter((g) => g.platform === p).length})
+                </option>
+              ))}
+            </Select>
+          )}
           <Select value={status} onChange={(e) => setStatus(e.target.value as GameStatus | 'any')}>
             <option value="any">모든 상태</option>
             {STATUS_ORDER.map((s) => (
@@ -194,7 +227,13 @@ export function Library() {
             />
             분 미만
           </label>
-          <span className="ml-auto text-faint">{list.length}개</span>
+          {multi && (
+            <label className="ml-2 inline-flex items-center gap-2 text-muted" title="이름이 같은 게임을 플랫폼에 상관없이 한 장으로 보여 줍니다">
+              <input type="checkbox" className="accent-[var(--brand)]" checked={merge} onChange={(e) => setMerge(e.target.checked)} />
+              같은 게임 묶기
+            </label>
+          )}
+          <span className="ml-auto text-faint">{groups.length !== list.length ? `${groups.length}개 (${list.length}개 판)` : `${list.length}개`}</span>
         </div>
         )}
 
@@ -231,15 +270,21 @@ export function Library() {
           <Empty title="조건에 맞는 게임이 없습니다">검색어나 필터를 바꿔 보세요.</Empty>
         ) : view === 'grid' ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
-            {shown.map((g) => {
+            {shownGroups.map(({ primary: g, all }) => {
               const ex = excludeOf(g)
-              const unplayed = isUnplayed(g, unplayedMin)
+              const unplayed = all.every((x) => isUnplayed(x, unplayedMin))
+              const known = all.filter((x) => x.playtimeKnown)
+              const minutes = known.reduce((a, x) => a + x.playtimeMin, 0)
+              const devices = [...new Set(all.map(deviceLabel))]
               return (
                 <div key={g.key} className={cn('group relative', ex && 'opacity-55')}>
                   <button type="button" className="block w-full text-left" onClick={() => openGame(g.key)}>
                     <div className="relative overflow-hidden rounded-xl ring-1 ring-line">
                       <Cover src={g.headerImage} alt={g.name} className="aspect-[460/215] w-full transition-transform group-hover:scale-[1.03]" />
                       {unplayed && <span className="absolute top-2 left-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white">안 한 게임</span>}
+                      {multi && (
+                        <span className="absolute bottom-2 left-2 rounded-md bg-black/65 px-1.5 py-0.5 text-[11px] font-medium text-white">{devices.join(' · ')}</span>
+                      )}
                     </div>
                     <div className="mt-2 flex items-start justify-between gap-2">
                       <div className="min-w-0 truncate text-[14px] font-semibold text-ink">{g.nameKo || g.name}</div>
@@ -247,11 +292,15 @@ export function Library() {
                     </div>
                     <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[13px]">
                       <span className="num flex min-w-0 items-center gap-2 whitespace-nowrap text-muted">
-                        {hours(g.playtimeMin)}
+                        {known.length ? hours(minutes) : g.gamerscore ? `${g.gamerscore.done}G` : '시간 정보 없음'}
                         <ReviewBadge review={g.review} compact />
                         {g.dlcCount > 0 && <span className="text-[12px] text-faint">DLC {g.dlcOwned}/{g.dlcCount}</span>}
                       </span>
-                      <PriceLine p={g.priceKr} className="ml-auto text-[13px]" compact />
+                      {g.platform === 'steam' || g.priceKr ? (
+                        <PriceLine p={g.priceKr} className="ml-auto text-[13px]" compact />
+                      ) : g.trophies?.platinum ? (
+                        <span className="ml-auto text-[12px] font-semibold text-[#7aa7d9]">플래티넘</span>
+                      ) : null}
                     </div>
                     {g.achTotal ? <Progress className="mt-2" value={(g.achDone ?? 0) / g.achTotal} /> : null}
                   </button>
@@ -314,10 +363,11 @@ export function Library() {
                         <div className="flex items-center gap-2.5">
                           <Cover src={g.headerImage} alt="" className="h-8 w-[68px] shrink-0 rounded" />
                           <span className={cn('truncate font-medium', ex ? 'text-faint' : 'text-ink')}>{g.nameKo || g.name}</span>
+                          {multi && <Badge tone="muted">{shownGroups.find((x) => x.primary === g)?.all.map(deviceLabel).join(' · ') ?? deviceLabel(g)}</Badge>}
                           {ex && <Badge tone="muted">{EXCLUDE_LABELS[ex]}</Badge>}
                         </div>
                       </td>
-                      <td className="num px-2 py-2 text-right">{hours(g.playtimeMin)}</td>
+                      <td className="num px-2 py-2 text-right">{g.playtimeKnown ? hours(g.playtimeMin) : '—'}</td>
                       <td className="px-2 py-2">
                         <StatusBadge status={g.status} />
                       </td>
@@ -342,9 +392,9 @@ export function Library() {
             </table>
           </div>
         )}
-        {filter !== 'dlc' && list.length > limit && (
+        {filter !== 'dlc' && groups.length > limit && (
           <div className="flex justify-center">
-            <Button onClick={() => setLimit((l) => l + PAGE)}>더 보기 ({list.length - limit}개 남음)</Button>
+            <Button onClick={() => setLimit((l) => l + PAGE)}>더 보기 ({groups.length - limit}개 남음)</Button>
           </div>
         )}
       </PageBody>
@@ -400,7 +450,7 @@ function DlcTable({ q, onOpenGame, view }: { q: string; onOpenGame(key: string):
         <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
           {rows.slice(0, limit).map((d) => (
             <div key={d.appid} className={cn('group relative', !d.owned && 'opacity-70 hover:opacity-100')}>
-              <button type="button" className="block w-full text-left" onClick={() => openApp(d.appid)}>
+              <button type="button" className="block w-full text-left" onClick={() => openApp(d.appid, { name: d.name, headerImage: d.headerImage, priceKr: d.priceKr })}>
                 <div className="overflow-hidden rounded-xl ring-1 ring-line">
                   <Cover src={d.headerImage} alt={d.name} className="aspect-[460/215] w-full transition-transform group-hover:scale-[1.03]" />
                 </div>
@@ -443,7 +493,7 @@ function DlcTable({ q, onOpenGame, view }: { q: string; onOpenGame(key: string):
                   <button
                     type="button"
                     className={cn('flex max-w-full items-center gap-2.5 text-left hover:underline', d.owned ? 'font-medium text-ink' : '')}
-                    onClick={() => openApp(d.appid)}
+                    onClick={() => openApp(d.appid, { name: d.name, headerImage: d.headerImage, priceKr: d.priceKr })}
                   >
                     <Cover src={d.headerImage} alt="" className="h-8 w-[68px] shrink-0 rounded" />
                     <span className="truncate">{d.name}</span>

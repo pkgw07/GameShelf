@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.4.0'
+export const APP_VERSION = '1.5.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'
@@ -111,6 +111,46 @@ export interface GameRow {
   /** 상점에 있는 DLC 수 / 보유로 표시된 DLC 수 */
   dlcCount: number
   dlcOwned: number
+  /** 기기 (PS5, PS4, Xbox Series, Switch 등). Steam 은 null */
+  device: string | null
+  /** 플레이타임을 알 수 있는지 (Xbox 는 알 수 없음) */
+  playtimeKnown: boolean
+  /** 직접 추가한 게임 (Switch 등) */
+  manual: boolean
+  /** PlayStation 트로피 (획득 개수) */
+  trophies: TrophyCounts | null
+  /** Xbox 게이머스코어 */
+  gamerscore: { done: number; total: number } | null
+}
+
+export interface TrophyCounts {
+  platinum: number
+  gold: number
+  silver: number
+  bronze: number
+}
+
+export const PLATFORM_LABELS: Record<Platform, string> = {
+  steam: 'Steam',
+  psn: 'PlayStation',
+  xbox: 'Xbox',
+  switch: 'Switch',
+  manual: '기타'
+}
+
+/** 직접 추가·수정할 때 쓰는 값 */
+export interface ManualGameInput {
+  platform: Exclude<Platform, 'steam'>
+  name: string
+  playtimeMin: number
+  image: string | null
+  device: string | null
+}
+
+/** 다른 플랫폼 연결 상태 */
+export interface PlatformStatus {
+  psn: { connected: boolean; account: string | null }
+  xbox: { connected: boolean; account: string | null }
 }
 
 /** DLC 보유 표시의 출처: 직접 / 라이선스 가져오기 / 구매 내역 / Steam 로그인 보유 목록 / 설치 폴더 */
@@ -190,6 +230,12 @@ export interface Settings {
   notifyTargetPrice: boolean
   /** 위시리스트 역대 최저가 도달 알림 */
   notifyHistoricalLow: boolean
+  /** PlayStation 로그인 (갱신 토큰, 암호화 저장) */
+  psnRefreshToken: string
+  psnAccount: string
+  /** Xbox: OpenXBL(xbl.io) API 키 (암호화 저장) */
+  xblApiKey: string
+  xblAccount: string
 }
 
 /** 설정에서 고를 수 있는 글자 크기 (화면 확대 비율) */
@@ -213,7 +259,11 @@ export const DEFAULT_SETTINGS: Settings = {
   usdKrwRate: 1400,
   includeDlcInTotals: true,
   notifyTargetPrice: true,
-  notifyHistoricalLow: true
+  notifyHistoricalLow: true,
+  psnRefreshToken: '',
+  psnAccount: '',
+  xblApiKey: '',
+  xblAccount: ''
 }
 
 export interface ProfileInfo {

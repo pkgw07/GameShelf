@@ -1,6 +1,8 @@
 import type { Db } from './driver'
 import type {
   DlcOwnSource,
+  ManualGameInput,
+  TrophyCounts,
   AchievementRow,
   DlcRow,
   GameRow,
@@ -39,6 +41,19 @@ export interface OwnedGameInput {
   playtime2wMin: number
   lastPlayed: number | null
   hasStats: boolean
+  /** Steam 이외 플랫폼에서 받은 추가 정보 */
+  ext?: ExtGameInput
+}
+
+export interface ExtGameInput {
+  image?: string | null
+  device?: string | null
+  achDone?: number | null
+  achTotal?: number | null
+  scoreDone?: number | null
+  scoreTotal?: number | null
+  trophies?: TrophyCounts | null
+  playtimeKnown?: boolean
 }
 
 export interface SteamAppInput {
@@ -112,12 +127,115 @@ export class Repo {
           ins.run(platform, g.gameId, g.name, g.playtimeMin, g.playtime2wMin, g.lastPlayed, g.hasStats, now, now)
           added.push(keyOf(platform, g.gameId))
         }
+        if (g.ext) this.saveExt(platform, g.gameId, g.ext, false, now)
       }
-      const all = this.db.prepare('SELECT game_id FROM games WHERE platform = ? AND owned = 1').all<Row>(platform)
+      // 직접 추가한 게임은 목록에 없어도 그대로 둔다
+      const all = this.db
+        .prepare(
+          `SELECT game_id FROM games g WHERE platform = ? AND owned = 1
+           AND NOT EXISTS (SELECT 1 FROM ext_game e WHERE e.platform = g.platform AND e.game_id = g.game_id AND e.manual = 1)`
+        )
+        .all<Row>(platform)
       const off = this.db.prepare('UPDATE games SET owned = 0, updated_at = ? WHERE platform = ? AND game_id = ?')
       for (const r of all) if (!seen.has(String(r.game_id))) off.run(now, platform, String(r.game_id))
     })
     return { added }
+  }
+
+  saveExt(platform: Platform, gameId: string, e: ExtGameInput, manual: boolean, now = Date.now()): void {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO ext_game(platform, game_id, image, device, ach_done, ach_total, score_done, score_total, trophies, playtime_known, manual, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        platform,
+        gameId,
+        e.image ?? null,
+        e.device ?? null,
+        e.achDone ?? null,
+        e.achTotal ?? null,
+        e.scoreDone ?? null,
+        e.scoreTotal ?? null,
+        e.trophies ? JSON.stringify(e.trophies) : null,
+        e.playtimeKnown === false ? 0 : 1,
+        manual ? 1 : 0,
+        now
+      )
+  }
+
+  /** 직접 추가 (Switch, 기타 런처, 디스크 게임 등) */
+  addManualGame(input: ManualGameInput, now = Date.now()): string {
+    const gameId = `m${now.toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
+    this.db.tx(() => {
+      this.db
+        .prepare(
+          `INSERT INTO games(platform, game_id, name, playtime_min, playtime_2w_min, last_played, has_stats, owned, first_seen, updated_at)
+           VALUES (?, ?, ?, ?, 0, NULL, 0, 1, ?, ?)`
+        )
+        .run(input.platform, gameId, input.name.trim(), Math.max(0, Math.round(input.playtimeMin)), now, now)
+      this.saveExt(input.platform, gameId, { image: input.image, device: input.device }, true, now)
+    })
+    return keyOf(input.platform, gameId)
+  }
+
+  updateManualGame(key: string, input: Partial<Omit<ManualGameInput, 'platform'>>, now = Date.now()): void {
+    const { platform, gameId } = parseKey(key)
+    const ext = this.db.prepare('SELECT * FROM ext_game WHERE platform = ? AND game_id = ? AND manual = 1').get<Row>(platform, gameId)
+    if (!ext) throw new Error('직접 추가한 게임만 고칠 수 있습니다.')
+    this.db.tx(() => {
+      if (input.name !== undefined || input.playtimeMin !== undefined) {
+        const g = this.db.prepare('SELECT name, playtime_min FROM games WHERE platform = ? AND game_id = ?').get<Row>(platform, gameId)
+        this.db
+          .prepare('UPDATE games SET name = ?, playtime_min = ?, updated_at = ? WHERE platform = ? AND game_id = ?')
+          .run(
+            input.name?.trim() || String(g?.name ?? ''),
+            input.playtimeMin !== undefined ? Math.max(0, Math.round(input.playtimeMin)) : Number(g?.playtime_min ?? 0),
+            now,
+            platform,
+            gameId
+          )
+      }
+      this.db
+        .prepare('UPDATE ext_game SET image = ?, device = ?, updated_at = ? WHERE platform = ? AND game_id = ?')
+        .run(
+          input.image !== undefined ? input.image : str(ext.image),
+          input.device !== undefined ? input.device : str(ext.device),
+          now,
+          platform,
+          gameId
+        )
+    })
+  }
+
+  /** 플랫폼 연결을 끊을 때: 받아 온 게임만 목록에서 뺀다 (직접 입력한 구매가·메모는 남겨 다시 연결하면 돌아온다) */
+  removePlatformGames(platform: Platform): number {
+    let n = 0
+    this.db.tx(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT game_id FROM games g WHERE platform = ?
+           AND NOT EXISTS (SELECT 1 FROM ext_game e WHERE e.platform = g.platform AND e.game_id = g.game_id AND e.manual = 1)`
+        )
+        .all<Row>(platform)
+      for (const r of rows) {
+        this.db.prepare('DELETE FROM games WHERE platform = ? AND game_id = ?').run(platform, String(r.game_id))
+        this.db.prepare('DELETE FROM ext_game WHERE platform = ? AND game_id = ?').run(platform, String(r.game_id))
+        n++
+      }
+    })
+    return n
+  }
+
+  deleteManualGame(key: string): void {
+    const { platform, gameId } = parseKey(key)
+    const ext = this.db.prepare('SELECT 1 AS x FROM ext_game WHERE platform = ? AND game_id = ? AND manual = 1').get<Row>(platform, gameId)
+    if (!ext) throw new Error('직접 추가한 게임만 지울 수 있습니다.')
+    this.db.tx(() => {
+      for (const t of ['games', 'user_data', 'ext_game', 'playtime_snapshots', 'hltb', 'play_sessions']) {
+        this.db.prepare(`DELETE FROM ${t} WHERE platform = ? AND game_id = ?`).run(platform, gameId)
+      }
+    })
   }
 
   ownedSteamAppids(): number[] {
@@ -892,6 +1010,8 @@ export class Repo {
     const achMap = new Map<number, Row>()
     for (const r of this.db.prepare('SELECT * FROM steam_ach_summary').all<Row>()) achMap.set(Number(r.appid), r)
     const wish = new Set(this.wishlistAppids())
+    const extMap = new Map<string, Row>()
+    for (const r of this.db.prepare('SELECT * FROM ext_game').all<Row>()) extMap.set(keyOf(r.platform as Platform, String(r.game_id)), r)
 
     return games.map((g) => {
       const platform = g.platform as Platform
@@ -903,6 +1023,7 @@ export class Repo {
       const pr = appid != null ? pc.prices(appid) : { priceKr: null, priceUs: null, lowKr: null, lowUs: null }
       const ach = appid != null ? achMap.get(appid) : undefined
       const h = hltbMap.get(key)
+      const ext = extMap.get(key)
       const manualMain = num(u?.hltb_main_manual)
       let hltb: HltbInfo | null = null
       if (manualMain != null) {
@@ -920,13 +1041,13 @@ export class Repo {
         playtimeMin: Number(g.playtime_min),
         playtime2wMin: Number(g.playtime_2w_min),
         lastPlayed: num(g.last_played) || null,
-        headerImage: str(app?.header_image) || (appid != null ? steamHeader(appid) : ''),
+        headerImage: str(app?.header_image) || (appid != null ? steamHeader(appid) : str(ext?.image) ?? ''),
         genres: app ? (JSON.parse(String(app.genres)) as GenreRef[]) : [],
         isFree: Boolean(app?.is_free),
         detailsStatus: (app?.status as GameRow['detailsStatus']) ?? 'pending',
         ...pr,
-        achTotal: ach ? Number(ach.total) : null,
-        achDone: ach ? Number(ach.done) : null,
+        achTotal: ach ? Number(ach.total) : num(ext?.ach_total),
+        achDone: ach ? Number(ach.done) : num(ext?.ach_done),
         status: ((u?.status as GameStatus) ?? 'none') as GameStatus,
         statusAuto: Boolean(u?.status_auto),
         excludedManual: Boolean(u?.excluded),
@@ -941,7 +1062,12 @@ export class Repo {
         firstSeen: Number(g.first_seen),
         review: appid != null ? pc.review(appid) : null,
         dlcCount: appid != null ? dlcCount.get(appid) ?? 0 : 0,
-        dlcOwned: appid != null ? dlcOwned.get(appid) ?? 0 : 0
+        dlcOwned: appid != null ? dlcOwned.get(appid) ?? 0 : 0,
+        device: str(ext?.device),
+        playtimeKnown: ext ? Boolean(ext.playtime_known) : true,
+        manual: Boolean(ext?.manual),
+        trophies: ext?.trophies ? (JSON.parse(String(ext.trophies)) as TrophyCounts) : null,
+        gamerscore: ext && ext.score_total != null ? { done: Number(ext.score_done ?? 0), total: Number(ext.score_total) } : null
       }
     })
   }

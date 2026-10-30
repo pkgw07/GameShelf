@@ -9,7 +9,7 @@ export function suggestStatus(g: GameRow, nowSec = Math.floor(Date.now() / 1000)
   if (g.achTotal && g.achTotal > 0 && g.achDone === g.achTotal) return 'completed'
   if (g.status === 'completed' || g.status === 'cleared') return null
   const recent = g.playtime2wMin > 0 || (g.lastPlayed != null && nowSec - g.lastPlayed < RECENT_SEC)
-  if (recent && g.playtimeMin > 0) return 'playing'
+  if (recent && (g.playtimeMin > 0 || g.playtimeKnown === false)) return 'playing'
   return null
 }
 

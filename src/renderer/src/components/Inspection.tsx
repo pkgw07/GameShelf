@@ -144,7 +144,7 @@ export function Inspection({ info, drawer }: { info: PriceInspection; drawer?: b
 
 /** 보유하지 않은 게임의 상세 창 (추천, 위시리스트 등에서 열림) */
 export function StoreDrawer() {
-  const { openAppId, openApp, toast } = useStore()
+  const { openAppId, openAppPreview: preview, openApp, toast } = useStore()
   const [info, setInfo] = useState<PriceInspection | null>(null)
   useEffect(() => {
     if (openAppId == null) return
@@ -185,8 +185,17 @@ export function StoreDrawer() {
           {info && info.appid === openAppId ? (
             <Inspection key={info.appid} info={info} drawer />
           ) : (
-            <div className="flex items-center gap-2 py-10 text-[13px] text-muted">
-              <Spinner /> 게임 정보와 가격 이력을 불러오는 중
+            <div>
+              {preview && (
+                <>
+                  <Cover src={preview.headerImage} alt={preview.name} className="aspect-[460/215] w-full rounded-xl" />
+                  <h2 className="mt-4 text-xl leading-tight font-bold text-ink">{preview.name}</h2>
+                  {preview.priceKr && <PriceLine p={preview.priceKr} className="mt-3 text-2xl" />}
+                </>
+              )}
+              <div className="flex items-center gap-2 py-6 text-[13px] text-muted">
+                <Spinner /> 소개와 가격 이력을 불러오는 중
+              </div>
             </div>
           )}
         </div>

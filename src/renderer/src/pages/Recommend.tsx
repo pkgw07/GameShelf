@@ -10,9 +10,12 @@ import { useStore } from '@/lib/store'
 
 const compact = new Intl.NumberFormat('ko-KR', { notation: 'compact' })
 
+let lastResult: RecommendationResult | null = null
+
 export function Recommend() {
   const { games, openGame, openApp, toast } = useStore()
-  const [data, setData] = useState<RecommendationResult | null>(null)
+  // 다른 화면에 갔다 와도 지난 결과를 바로 보여 주고, 뒤에서 새로 받는다
+  const [data, setData] = useState<RecommendationResult | null>(lastResult)
   const [loading, setLoading] = useState(false)
 
   const load = useCallback(
@@ -20,6 +23,7 @@ export function Recommend() {
       setLoading(true)
       try {
         const r = await window.api.getRecommendations(refresh)
+        lastResult = r
         setData(r)
         if (r.error) toast(r.error, 'error')
       } catch (e) {
@@ -50,7 +54,7 @@ export function Recommend() {
           <Empty title="먼저 게임 목록을 동기화해 주세요" />
         ) : !data ? (
           <div className="flex items-center gap-2 text-[13px] text-muted">
-            <Spinner /> 장르 취향을 분석하고 추천 후보를 불러오는 중입니다. 처음에는 1분 정도 걸릴 수 있습니다.
+            <Spinner /> 장르 취향을 분석하고 추천 후보를 불러오는 중입니다. 처음 한 번은 30초 정도 걸릴 수 있고, 다음부터는 바로 열립니다.
           </div>
         ) : (
           <>
@@ -100,7 +104,7 @@ export function Recommend() {
               {data.candidates.length ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(230px,1fr))] gap-4">
                   {data.candidates.map((r) => (
-                    <RecCard key={r.appid} r={r} onClick={() => openApp(r.appid)} />
+                    <RecCard key={r.appid} r={r} onClick={() => openApp(r.appid, { name: r.name, headerImage: r.headerImage, priceKr: r.priceKr })} />
                   ))}
                 </div>
               ) : (

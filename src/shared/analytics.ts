@@ -4,7 +4,12 @@ import { WEAK_GENRES, genreName } from './genres'
 
 export const DAY_MS = 86_400_000
 
-export function isUnplayed(g: Pick<GameRow, 'playtimeMin'>, unplayedMinutes: number): boolean {
+export function isUnplayed(
+  g: Pick<GameRow, 'playtimeMin'> & Partial<Pick<GameRow, 'playtimeKnown' | 'achDone' | 'lastPlayed'>>,
+  unplayedMinutes: number
+): boolean {
+  // 플레이타임을 모르는 플랫폼(Xbox): 실행 기록도 도전과제도 없을 때만 안 한 게임
+  if (g.playtimeKnown === false) return !g.lastPlayed && !g.achDone
   return g.playtimeMin < Math.max(0, unplayedMinutes)
 }
 
@@ -268,4 +273,17 @@ export function normalizeHistory(points: PricePoint[]): PricePoint[] {
 export function regionRatio(g: Pick<GameRow, 'priceKr' | 'priceUs'>, rate: number): number | null {
   if (!g.priceKr || !g.priceUs || g.priceUs.initial <= 0 || g.priceKr.initial <= 0) return null
   return g.priceKr.initial / ((g.priceUs.initial / 100) * rate)
+}
+
+/** 플랫폼 사이 같은 게임을 찾을 때 쓰는 이름 (™®, 기종 표기, 문장부호 제거) */
+export function titleKey(name: string): string {
+  return name
+    .replace(/[™®©]/g, '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/\((?:ps4|ps5|playstation\s*\d|xbox[^)]*|windows|pc|nintendo switch)[^)]*\)/g, '')
+    .replace(/\b(?:ps4|ps5)\s*(?:&|and|\/)\s*(?:ps4|ps5)\b/g, '')
+    .replace(/\b(?:ps4|ps5)\b/g, '')
+    .replace(/\b(?:standard|digital|deluxe|ultimate|complete|definitive|goty|game of the year)\s*edition\b/g, '')
+    .replace(/[^\p{L}\p{N}]+/gu, '')
 }

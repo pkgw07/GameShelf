@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { LuExternalLink, LuPlay, LuStar, LuX } from 'react-icons/lu'
+import { LuExternalLink, LuPencil, LuPlay, LuStar, LuX } from 'react-icons/lu'
 import {
   costPerHour,
   EXCLUDE_LABELS,
@@ -15,6 +15,8 @@ import { dateKo, duration, hours, hoursFromH, parseWon, price, relative, usd, wo
 import { useStore } from '@/lib/store'
 import { StepChart } from './charts'
 import { Cover, LowLine, PriceLine, ReviewBadge, StatusPicker, VerdictBadge } from './game'
+import { ManualGameDialog } from './ManualGameDialog'
+import { deviceLabel, siblingsOf } from '@/lib/platforms'
 import { Badge, Button, Input, Progress, Spinner, Switch } from './ui'
 
 export function GameDrawer() {
@@ -58,7 +60,10 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function DrawerBody({ game: g }: { game: GameRow }) {
-  const { openGame, updateGame, excludeOf, settings, toast } = useStore()
+  const { openGame, updateGame, excludeOf, settings, toast, games } = useStore()
+  const [editing, setEditing] = useState(false)
+  const steam = g.platform === 'steam'
+  const siblings = useMemo(() => siblingsOf(g, games), [g, games])
   const [detail, setDetail] = useState<GameDetail | null>(null)
   const [itad, setItad] = useState<{ kr: PricePoint[]; us: PricePoint[] } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -124,8 +129,18 @@ function DrawerBody({ game: g }: { game: GameRow }) {
             <Badge key={x.id}>{x.name}</Badge>
           ))}
           {reason && <Badge tone="muted">통계 제외 · {EXCLUDE_LABELS[reason]}</Badge>}
-          {g.detailsStatus === 'unavailable' && <Badge tone="muted">한국 상점 미판매</Badge>}
+          {steam && g.detailsStatus === 'unavailable' && <Badge tone="muted">한국 상점 미판매</Badge>}
+          {!steam && <Badge tone="brand">{deviceLabel(g)}</Badge>}
+          {g.manual && <Badge tone="muted">직접 추가</Badge>}
         </div>
+        {g.manual && (
+          <div className="mt-4">
+            <Button size="sm" icon={<LuPencil />} onClick={() => setEditing(true)}>
+              정보 고치기
+            </Button>
+          </div>
+        )}
+        {editing && <ManualGameDialog edit={g} onClose={() => setEditing(false)} />}
         {g.appid != null && (
           <div className="mt-4 flex gap-2">
             <Button size="sm" icon={<LuPlay />} onClick={() => void window.api.openExternal(`steam://run/${g.appid}`)}>
@@ -139,8 +154,10 @@ function DrawerBody({ game: g }: { game: GameRow }) {
         <div className="mt-5 grid grid-cols-3 gap-3">
           <div className="rounded-xl border border-line bg-surface p-3">
             <div className="text-[12px] text-muted">플레이타임</div>
-            <div className="num text-lg font-bold">{hours(g.playtimeMin)}</div>
-            <div className="text-[12px] text-faint">최근 2주 {hours(g.playtime2wMin)}</div>
+            <div className="num text-lg font-bold">{g.playtimeKnown ? hours(g.playtimeMin) : '알 수 없음'}</div>
+            <div className="text-[12px] text-faint">
+              {!g.playtimeKnown ? (g.platform === 'xbox' ? 'Xbox는 플레이타임을 주지 않습니다' : '플레이 기록이 없는 기종') : steam ? `최근 2주 ${hours(g.playtime2wMin)}` : g.manual ? '직접 입력' : '\u00a0'}
+            </div>
           </div>
           <div className="rounded-xl border border-line bg-surface p-3">
             <div className="text-[12px] text-muted">마지막 플레이</div>
@@ -148,12 +165,36 @@ function DrawerBody({ game: g }: { game: GameRow }) {
             <div className="text-[12px] text-faint">{g.lastPlayed ? dateKo(g.lastPlayed * 1000) : '—'}</div>
           </div>
           <div className="rounded-xl border border-line bg-surface p-3">
-            <div className="text-[12px] text-muted">도전과제</div>
+            <div className="text-[12px] text-muted">{g.platform === 'psn' ? '트로피' : '도전과제'}</div>
             <div className="num text-lg font-bold">{g.achTotal ? `${g.achDone}/${g.achTotal}` : '없음'}</div>
             {g.achTotal ? <Progress className="mt-1.5" value={(g.achDone ?? 0) / g.achTotal} /> : <div className="text-[12px] text-faint">—</div>}
+            {g.trophies && (
+              <div className="num mt-1 text-[11px] text-muted" title="플래티넘 · 골드 · 실버 · 브론즈">
+                <span className="text-[#7aa7d9]">P{g.trophies.platinum}</span> · <span className="text-[#d4a72c]">G{g.trophies.gold}</span> · S{g.trophies.silver} ·{' '}
+                <span className="text-[#b07a4f]">B{g.trophies.bronze}</span>
+              </div>
+            )}
+            {g.gamerscore && <div className="num mt-1 text-[11px] text-muted">게이머스코어 {g.gamerscore.done}/{g.gamerscore.total}</div>}
           </div>
         </div>
       </div>
+
+      {siblings.length > 0 && (
+        <Section title="다른 플랫폼에도 있음">
+          <ul className="space-y-1.5">
+            {siblings.map((x) => (
+              <li key={x.key}>
+                <button type="button" className="flex w-full items-center gap-3 rounded-lg px-1 py-1 text-left hover:bg-surface-2" onClick={() => openGame(x.key)}>
+                  <Cover src={x.headerImage} alt="" className="h-9 w-[78px] shrink-0 rounded" />
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-ink">{x.nameKo || x.name}</span>
+                  <Badge tone="muted">{deviceLabel(x)}</Badge>
+                  <span className="num w-16 text-right text-[12px] text-muted">{x.playtimeKnown ? hours(x.playtimeMin) : '—'}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      )}
 
       <Section title="상태">
         <StatusPicker value={g.status} onChange={(s) => void updateGame(g.key, { status: s })} />
@@ -212,6 +253,7 @@ function DrawerBody({ game: g }: { game: GameRow }) {
         </div>
       </Section>
 
+      {steam && (
       <Section
         title="가격"
         action={
@@ -281,6 +323,7 @@ function DrawerBody({ game: g }: { game: GameRow }) {
           )}
         </div>
       </Section>
+      )}
 
       {detail && detail.dlcs.length > 0 && <DlcSection dlcs={detail.dlcs} onChanged={async () => setDetail(await window.api.getGameDetail(g.key))} />}
 
@@ -359,6 +402,7 @@ function DrawerBody({ game: g }: { game: GameRow }) {
         />
       </Section>
 
+      {steam && (
       <Section
         title={`도전과제${detail?.achievements.length ? ` · ${achieved.length}/${detail.achievements.length}` : ''}`}
         action={
@@ -401,6 +445,7 @@ function DrawerBody({ game: g }: { game: GameRow }) {
           </ul>
         )}
       </Section>
+      )}
 
       {detail && detail.sessions.length > 0 && (
         <Section title="플레이 기록">

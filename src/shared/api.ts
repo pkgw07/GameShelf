@@ -7,6 +7,8 @@ import type {
   GameRow,
   HltbInfo,
   ImportResult,
+  ManualGameInput,
+  PlatformStatus,
   OwnedDlcResult,
   StoreStatus,
   NowPlaying,
@@ -73,6 +75,15 @@ export interface GameShelfApi {
   resetPurchases(scope: 'imported' | 'all'): Promise<BackupResult>
   /** accounts: API 키·계정 연결·Steam 로그인만 지움 / all: 모든 데이터를 지우고 다시 시작 (지우기 전 자동 백업) */
   factoryReset(scope: 'accounts' | 'all'): Promise<BackupResult>
+  /** 다른 플랫폼 (PlayStation, Xbox, 직접 추가) */
+  getPlatformStatus(): Promise<PlatformStatus>
+  psnLogin(): Promise<PlatformStatus>
+  psnLogout(): Promise<PlatformStatus>
+  xblConnect(apiKey: string): Promise<PlatformStatus>
+  xblDisconnect(): Promise<PlatformStatus>
+  addManualGame(input: ManualGameInput): Promise<string>
+  updateManualGame(key: string, patch: Partial<Omit<ManualGameInput, 'platform'>>): Promise<void>
+  deleteManualGame(key: string): Promise<void>
   /** 프로그램 안 Steam 스토어 로그인 */
   storeStatus(): Promise<StoreStatus>
   storeLogin(): Promise<StoreStatus>

@@ -34,6 +34,7 @@ export class Core {
     this.settings = new SettingsStore(this.repo, codec)
     const get = (): Settings => this.settings.get()
     this.sync = new SyncService(this.repo, get, events.syncState, events.dataChanged, events.notify)
+    this.sync.saveSettings = (patch) => void this.settings.save(patch)
     this.insights = new Insights(this.repo, get)
     this.nowPlaying = new NowPlayingService(this.repo, get, events.nowPlaying, (appid) => void this.sync.quickRefresh(appid))
   }
