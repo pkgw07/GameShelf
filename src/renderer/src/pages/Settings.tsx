@@ -4,6 +4,7 @@ import { GENRES } from '@shared/genres'
 import type { AppInfo, Settings as S } from '@shared/types'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Field, Input, Panel, Segmented, Spinner, Switch } from '@/components/ui'
+import { STORE_LOGIN_NOTE, StoreLoginRow, useSteamImport } from '@/components/SteamConnect'
 import { cn } from '@/lib/cn'
 import { relative } from '@/lib/format'
 import { useStore } from '@/lib/store'
@@ -154,6 +155,8 @@ export function Settings() {
             </p>
           </div>
         </Panel>
+
+        <StoreLoginPanel />
 
         <Panel title="가격 데이터">
           <div className="space-y-4">
@@ -398,5 +401,22 @@ export function Settings() {
         </Panel>
       </PageBody>
     </>
+  )
+}
+
+function StoreLoginPanel() {
+  const imp = useSteamImport()
+  return (
+    <Panel title="Steam 로그인 (선택)">
+      <div className="space-y-3">
+        <p className="text-[13px] text-muted">
+          로그인해 두면 <b className="text-ink">보유 DLC</b>를 동기화할 때마다 자동으로 확인하고, 구매 기록·가격·지출 화면에서 <b className="text-ink">구매 내역·라이선스</b>를 버튼 하나로
+          불러올 수 있습니다. Steam API 키만으로는 이 정보를 받을 수 없습니다.
+        </p>
+        <StoreLoginRow imp={imp} />
+        {imp.step && <p className="text-[13px] text-muted">{imp.step}</p>}
+        <p className="text-[12px] text-faint">{STORE_LOGIN_NOTE}</p>
+      </div>
+    </Panel>
   )
 }

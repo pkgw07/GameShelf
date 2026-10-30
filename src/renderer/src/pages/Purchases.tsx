@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { LuRotateCcw, LuSearch, LuTrash2 } from 'react-icons/lu'
+import { LuCloudDownload, LuRotateCcw, LuSearch, LuTrash2 } from 'react-icons/lu'
 import { Columns } from '@/components/charts'
 import { Cover } from '@/components/game'
 import { PageBody, TopBar } from '@/components/Shell'
-import { Badge, Button, Empty, Input, Panel, Segmented, Select, Stat } from '@/components/ui'
+import { useSteamImport } from '@/components/SteamConnect'
+import { Badge, Button, Empty, Input, Panel, Segmented, Select, Spinner, Stat } from '@/components/ui'
 import { cn } from '@/lib/cn'
 import { dateKo, parseWon, pct, won } from '@/lib/format'
 import { useStore } from '@/lib/store'
@@ -61,7 +62,7 @@ export function Purchases() {
         dateIsAcquired: false,
         regular: x.priceKr?.initial ?? null,
         // DLC 의 ownedSource 는 '보유' 출처라, 라이선스만으로는 구매가 출처를 알 수 없음
-        source: x.ownedSource === 'license' ? null : x.ownedSource
+        source: x.ownedSource === 'manual' || x.ownedSource === 'purchase' ? x.ownedSource : null
       }))
     return [...g, ...d]
   }, [games, dlcs])
@@ -127,7 +128,7 @@ export function Purchases() {
 
   return (
     <>
-      <TopBar title="구매 기록" />
+      <TopBar title="구매 기록" actions={<SteamImportButton />} />
       <PageBody className="space-y-5">
         <div className="grid grid-cols-[1fr_340px] gap-5">
           <div className="grid grid-cols-4 gap-5 rounded-2xl border border-line bg-surface px-6 py-5">
@@ -213,6 +214,15 @@ export function Purchases() {
         <ResetPanel />
       </PageBody>
     </>
+  )
+}
+
+function SteamImportButton() {
+  const imp = useSteamImport()
+  return (
+    <Button icon={imp.busy ? <Spinner /> : <LuCloudDownload />} disabled={imp.busy} title={imp.step ?? 'Steam 구매 내역·라이선스·보유 DLC 불러오기'} onClick={() => void imp.run()}>
+      {imp.busy ? '불러오는 중' : 'Steam에서 불러오기'}
+    </Button>
   )
 }
 

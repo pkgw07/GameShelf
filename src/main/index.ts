@@ -8,6 +8,7 @@ import icon from '../../resources/icon.png?asset'
 import trayIcon from '../../resources/tray.png?asset'
 import { Core } from './core'
 import { registerIpc } from './ipc'
+import { SteamStore } from './services/steamstore'
 import { plainCodec, type SecretCodec } from './settings'
 import { Updater } from './updater'
 
@@ -206,10 +207,14 @@ if (selfTest) {
       notify
     })
     updater = new Updater((u) => send(IPC.updateState, u))
+    const store = new SteamStore()
+    // 로그인한 계정이 설정의 계정과 같을 때만 보유 목록을 쓴다
+    core.sync.ownedAppsSource = async () => ((await store.status(settings().steamId)).matches ? store.ownedApps() : null)
     registerIpc(core, updater, {
       onSettingsChanged: (prev, next) => applySettings(prev, next),
       getWindow: () => win,
-      notify
+      notify,
+      store
     })
     applySettings(null, settings())
     createWindow(!startHidden)

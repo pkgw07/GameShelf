@@ -7,6 +7,8 @@ import type {
   GameRow,
   HltbInfo,
   ImportResult,
+  OwnedDlcResult,
+  StoreStatus,
   NowPlaying,
   ParsedLicenseRow,
   ParsedPurchaseRow,
@@ -69,6 +71,15 @@ export interface GameShelfApi {
   assignImported(key: string, amount: number | null, date: string | null): Promise<void>
   getPurchases(): Promise<PurchaseRecord[]>
   resetPurchases(scope: 'imported' | 'all'): Promise<BackupResult>
+  /** 프로그램 안 Steam 스토어 로그인 */
+  storeStatus(): Promise<StoreStatus>
+  storeLogin(): Promise<StoreStatus>
+  storeLogout(): Promise<StoreStatus>
+  /** 로그인 세션으로 구매 내역 전체 HTML (렌더러 파서로 읽음) */
+  storePurchaseHistory(): Promise<{ html: string; pages: number }>
+  storeLicenses(): Promise<string>
+  /** 보유 DLC 확인: 로그인돼 있으면 Steam 보유 목록, 아니면 설치 폴더 */
+  syncOwnedDlc(): Promise<OwnedDlcResult>
 
   backup(): Promise<BackupResult>
   restore(): Promise<BackupResult>

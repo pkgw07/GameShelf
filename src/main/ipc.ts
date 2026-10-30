@@ -6,6 +6,7 @@ import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
 import { APP_VERSION, type BackupResult, type Settings } from '@shared/types'
 import type { Core } from './core'
 import type { Updater } from './updater'
+import type { SteamStore } from './services/steamstore'
 import { getPlayerSummary, resolveSteamId, storeSearch, toProfile } from './providers/steam'
 import { applyPurchases, importLicenses, importPurchases } from './services/imports'
 import { recognize } from './services/ocr'
@@ -18,6 +19,7 @@ export interface IpcHooks {
   onSettingsChanged(prev: Settings, next: Settings): void
   getWindow(): BrowserWindow | null
   notify(title: string, body: string): void
+  store: SteamStore
 }
 
 function isSqliteFile(path: string): boolean {
@@ -34,6 +36,12 @@ function isSqliteFile(path: string): boolean {
 export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void {
   const { repo, settings, sync, insights } = core
   let cachedProfile: Awaited<ReturnType<GameShelfApi['getProfile']>> = null
+
+  const requireStore = async (): Promise<void> => {
+    const st = await hooks.store.status(settings.get().steamId)
+    if (!st.loggedIn) throw new Error('Steam에 로그인되어 있지 않습니다.')
+    if (!st.matches) throw new Error('프로그램에서 로그인한 Steam 계정이 설정의 계정과 다릅니다. 로그아웃 후 같은 계정으로 로그인해 주세요.')
+  }
 
   const h: Handlers = {
     getAppInfo: () => ({ version: APP_VERSION, dataPath: dirname(core.dbPath), dbDriver: core.db.driver, platform: process.platform }),
@@ -135,6 +143,25 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const n = repo.resetPurchases(scope)
       return { ok: true, path: file, message: `${n}개 항목의 ${scope === 'all' ? '구매가·구매일' : '가져온 구매가'}을 지웠습니다. 지우기 전 데이터는 데이터 폴더의 backups에 보관했습니다.` }
     },
+
+    storeStatus: () => hooks.store.status(settings.get().steamId),
+    storeLogin: async () => {
+      await hooks.store.login(hooks.getWindow())
+      return hooks.store.status(settings.get().steamId)
+    },
+    storeLogout: async () => {
+      await hooks.store.logout()
+      return hooks.store.status(settings.get().steamId)
+    },
+    storePurchaseHistory: async () => {
+      await requireStore()
+      return hooks.store.purchaseHistoryHtml()
+    },
+    storeLicenses: async () => {
+      await requireStore()
+      return hooks.store.licensesHtml()
+    },
+    syncOwnedDlc: () => sync.checkOwnedDlc(),
 
     backup: async (): Promise<BackupResult> => {
       const win = hooks.getWindow()

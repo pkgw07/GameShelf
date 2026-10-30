@@ -3,6 +3,7 @@ import { LuFileUp } from 'react-icons/lu'
 import { costPerHour, moneyTotals, purchaseTiming, regionRatio, spendBy, TIMING_LABELS, type TimingGrade } from '@shared/analytics'
 import type { GameRow, ImportResult } from '@shared/types'
 import { Columns } from '@/components/charts'
+import { SteamImportTab } from '@/components/SteamConnect'
 import { PasteImport } from '@/components/PasteImport'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Panel, Segmented, Stat } from '@/components/ui'
@@ -205,7 +206,7 @@ function ImportPanel() {
   const [result, setResult] = useState<ImportResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [assigned, setAssigned] = useState<Set<number>>(new Set())
-  const [tab, setTab] = useState<'page' | 'text' | 'image'>('page')
+  const [tab, setTab] = useState<'steam' | 'page' | 'text' | 'image'>('steam')
 
   const pick = async () => {
     setBusy(true)
@@ -238,11 +239,12 @@ function ImportPanel() {
     <Panel
       title="구매가 가져오기"
       action={
-        <Segmented<'page' | 'text' | 'image'>
+        <Segmented<'steam' | 'page' | 'text' | 'image'>
           size="sm"
           value={tab}
           onChange={setTab}
           options={[
+            { value: 'steam', label: 'Steam에서 바로' },
             { value: 'page', label: '저장한 Steam 페이지' },
             { value: 'text', label: '표·텍스트 붙여넣기' },
             { value: 'image', label: '캡처 이미지' }
@@ -250,8 +252,17 @@ function ImportPanel() {
         />
       }
     >
-      {tab !== 'page' ? (
+      {tab === 'text' || tab === 'image' ? (
         <PasteImport key={tab} mode={tab} />
+      ) : (
+      <>
+      {tab === 'steam' ? (
+        <SteamImportTab
+          onResult={(r) => {
+            setResult(r)
+            setAssigned(new Set())
+          }}
+        />
       ) : (
       <>
       <div className="mb-3">
@@ -279,6 +290,8 @@ function ImportPanel() {
       <p className="mt-2 text-[12px] text-faint">
         로그인 정보는 프로그램에 입력하지 않습니다. 직접 입력한 구매가는 가져오기가 덮어쓰지 않으며, 여러 게임을 한 번에 결제한 경우 각 게임의 정가 비율로 나눕니다.
       </p>
+      </>
+      )}
       {result && (
         <div className="mt-4 rounded-xl bg-surface-2 p-4">
           <div className="text-[13px] text-ink">

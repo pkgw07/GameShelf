@@ -1,5 +1,6 @@
 import type { Db } from './driver'
 import type {
+  DlcOwnSource,
   AchievementRow,
   DlcRow,
   GameRow,
@@ -342,7 +343,7 @@ export class Repo {
     return r && Number(r.count) > 0 ? { percent: num(r.percent), count: Number(r.count), label: str(r.label) } : null
   }
 
-  setDlcOwned(appid: number, owned: boolean, source: 'manual' | 'license' | 'purchase'): void {
+  setDlcOwned(appid: number, owned: boolean, source: DlcOwnSource): void {
     // 직접 해제한 DLC는 가져오기가 다시 보유로 바꾸지 않는다
     if (source !== 'manual') {
       const cur = this.db.prepare('SELECT owned, source FROM dlc_owned WHERE appid = ?').get<Row>(appid)
@@ -351,6 +352,36 @@ export class Repo {
     this.db
       .prepare('INSERT OR REPLACE INTO dlc_owned(appid, owned, source, updated_at) VALUES (?, ?, ?, ?)')
       .run(appid, owned, source, Date.now())
+  }
+
+  /**
+   * 보유 앱 목록(게임 + DLC)으로 보유 DLC 를 맞춘다.
+   *  - store: Steam 로그인으로 받은 전체 보유 목록 → 목록에 없어진 DLC(환불 등)는 보유 해제
+   *  - installed: 설치 폴더에서 찾은 DLC → 보유로 표시만 한다
+   * 직접 체크·해제한 DLC 는 건드리지 않는다.
+   */
+  applyOwnedApps(appids: Iterable<number>, source: 'store' | 'installed'): { owned: number; added: number; removed: number } {
+    const have = new Set(appids)
+    const cur = new Map<number, Row>()
+    for (const r of this.db.prepare('SELECT * FROM dlc_owned').all<Row>()) cur.set(Number(r.appid), r)
+    let owned = 0
+    let added = 0
+    let removed = 0
+    this.db.tx(() => {
+      for (const { dlc } of this.ownedGamesDlc()) {
+        const c = cur.get(dlc)
+        if (have.has(dlc)) {
+          owned++
+          if (c?.source === 'manual') continue
+          if (!c?.owned) added++
+          if (!c?.owned || (source === 'store' && c.source !== 'store')) this.setDlcOwned(dlc, true, source)
+        } else if (source === 'store' && c?.owned && c.source !== 'manual') {
+          this.setDlcOwned(dlc, false, 'store')
+          removed++
+        }
+      }
+    })
+    return { owned, added, removed }
   }
 
   ownedDlcAppids(): number[] {

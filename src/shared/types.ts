@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.2.0'
+export const APP_VERSION = '1.3.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'
@@ -113,6 +113,9 @@ export interface GameRow {
   dlcOwned: number
 }
 
+/** DLC 보유 표시의 출처: 직접 / 라이선스 가져오기 / 구매 내역 / Steam 로그인 보유 목록 / 설치 폴더 */
+export type DlcOwnSource = 'manual' | 'license' | 'purchase' | 'store' | 'installed'
+
 /** 보유 게임의 DLC */
 export interface DlcRow {
   appid: number
@@ -128,7 +131,7 @@ export interface DlcRow {
   review: ReviewInfo | null
   isFree: boolean
   owned: boolean
-  ownedSource: 'manual' | 'license' | 'purchase' | null
+  ownedSource: DlcOwnSource | null
   purchasePrice: number | null
   purchaseDate: string | null
 }
@@ -434,6 +437,23 @@ export interface UpdateState {
   percent: number | null
   error: string | null
   checkedAt: number | null
+}
+
+/** 프로그램 안 Steam 스토어 로그인 상태 */
+export interface StoreStatus {
+  loggedIn: boolean
+  /** 로그인한 계정의 SteamID64 */
+  steamId: string | null
+  /** 설정의 Steam 계정과 같은지 (설정에 계정이 없으면 true) */
+  matches: boolean
+}
+
+export interface OwnedDlcResult {
+  /** 어디서 확인했는지 */
+  source: 'store' | 'installed' | 'none'
+  owned: number
+  added: number
+  removed: number
 }
 
 export interface BackupResult {

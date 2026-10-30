@@ -1,7 +1,7 @@
 // 동기화 파이프라인
 // full : 설정 화면의 "지금 동기화" 버튼. 상세 정보까지 전부 확인
 // daily: 하루 한 번 자동 실행. 플레이타임 스냅샷, 가격 기록, 도전과제 변경분만 확인
-import type { Settings, SyncState } from '@shared/types'
+import type { OwnedDlcResult, Settings, SyncState } from '@shared/types'
 import type { Repo } from '../db/repo'
 import { keyOf } from '../db/repo'
 import { providers } from '../providers'
@@ -20,6 +20,7 @@ import { chunk, mapLimit } from '../util/http'
 import { recordDate } from '../util/time'
 import { applyAutoStatus } from './autostatus'
 import { lookupSteamIds, steamStoreLows } from './itad'
+import { scanInstalledDlc } from './localsteam'
 
 const DETAILS_MAX_AGE = 30 * 86_400_000
 const ITAD_MAP_MAX_AGE = 30 * 86_400_000
@@ -30,9 +31,30 @@ export type Notify = (title: string, body: string, appid?: number) => void
 
 export type SyncKind = 'full' | 'daily'
 
+/** 보유 앱(게임 + DLC) 목록을 주는 곳. 알 수 없으면 null */
+export type OwnedAppsSource = () => Promise<number[] | null>
+
 export class SyncService {
   private state: SyncState
   private ctrl: AbortController | null = null
+  /** Steam 스토어 로그인 세션 (index.ts 에서 연결) */
+  ownedAppsSource: OwnedAppsSource | null = null
+  /** 설치 폴더에서 찾은 DLC (테스트에서 바꿔 끼운다) */
+  installedDlcSource: OwnedAppsSource = scanInstalledDlc
+
+  /** 보유 DLC 확인: Steam 로그인 보유 목록이 있으면 그것으로, 없으면 설치 폴더로 */
+  async checkOwnedDlc(): Promise<OwnedDlcResult> {
+    let apps: number[] | null = null
+    try {
+      apps = (await this.ownedAppsSource?.()) ?? null
+    } catch {
+      apps = null
+    }
+    if (apps) return { source: 'store', ...this.repo.applyOwnedApps(apps, 'store') }
+    const installed = await this.installedDlcSource().catch(() => null)
+    if (installed?.length) return { source: 'installed', ...this.repo.applyOwnedApps(installed, 'installed') }
+    return { source: 'none', owned: 0, added: 0, removed: 0 }
+  }
 
   constructor(
     private repo: Repo,
@@ -184,6 +206,15 @@ export class SyncService {
           }
         }
         this.dataChanged()
+      }
+
+      // 4-1-2) 보유 DLC (Steam 로그인 보유 목록 또는 설치 폴더)
+      this.progress('dlc-owned', '보유 DLC 확인 중', 0, 1)
+      try {
+        const r = await this.checkOwnedDlc()
+        if (r.added || r.removed) this.dataChanged()
+      } catch (e) {
+        warn('보유 DLC', e)
       }
 
       // 4-2) DLC 이름과 Steam 평가 (200개씩 한 번에)

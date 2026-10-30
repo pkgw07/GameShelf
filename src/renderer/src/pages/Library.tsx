@@ -4,6 +4,7 @@ import { costPerHour, EXCLUDE_LABELS, hltbRemaining, isUnplayed } from '@shared/
 import { GENRES } from '@shared/genres'
 import { STATUS_LABELS, STATUS_ORDER, type GameRow, type GameStatus } from '@shared/types'
 import { Cover, LowLine, PriceLine, ReviewBadge, StatusBadge } from '@/components/game'
+import { OwnedDlcButton } from '@/components/SteamConnect'
 import { PageBody, TopBar } from '@/components/Shell'
 import { Badge, Button, Empty, Input, Progress, Segmented, Select } from '@/components/ui'
 import { cn } from '@/lib/cn'
@@ -390,9 +391,10 @@ function DlcTable({ q, onOpenGame }: { q: string; onOpenGame(key: string): void 
           <input type="checkbox" className="accent-[var(--brand)]" checked={ownedOnly} onChange={(e) => setOwnedOnly(e.target.checked)} />
           보유한 DLC만
         </label>
+        <OwnedDlcButton />
       </div>
       <p className="text-[12px] text-faint">
-        Steam API로는 DLC 보유 여부를 알 수 없습니다. 가격·지출 화면에서 구매 내역이나 라이선스를 가져오면 자동으로 체크되고, 여기서 직접 체크할 수도 있습니다.
+        설정에서 Steam에 로그인해 두면 동기화할 때 보유 DLC가 자동으로 체크됩니다. 로그인하지 않으면 이 PC에 설치된 게임의 DLC만 찾아 체크합니다. 여기서 직접 체크·해제할 수도 있고, 직접 바꾼 표시는 자동 확인이 덮어쓰지 않습니다.
       </p>
       <div className="overflow-x-auto rounded-2xl border border-line bg-surface">
         <table className="w-full text-[13px]">
