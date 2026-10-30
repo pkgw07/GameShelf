@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.1.1'
+export const APP_VERSION = '1.2.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'

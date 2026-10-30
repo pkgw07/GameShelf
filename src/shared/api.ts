@@ -68,6 +68,7 @@ export interface GameShelfApi {
   importLicenses(rows: ParsedLicenseRow[]): Promise<ImportResult>
   assignImported(key: string, amount: number | null, date: string | null): Promise<void>
   getPurchases(): Promise<PurchaseRecord[]>
+  resetPurchases(scope: 'imported' | 'all'): Promise<BackupResult>
 
   backup(): Promise<BackupResult>
   restore(): Promise<BackupResult>

@@ -1,5 +1,5 @@
 // 화면 → 메인 프로세스 요청 처리
-import { closeSync, copyFileSync, existsSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { IPC, type ApiMethod, type GameShelfApi } from '@shared/api'
@@ -126,6 +126,15 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       repo.setImportedPurchase(key, amount, date)
     },
     getPurchases: () => repo.purchases(),
+    resetPurchases: (scope) => {
+      // 되돌릴 수 있도록 먼저 데이터 폴더에 자동 백업
+      const dir = join(dirname(core.dbPath), 'backups')
+      mkdirSync(dir, { recursive: true })
+      const file = join(dir, `before-reset-${new Date().toISOString().replace(/[:.]/g, '-')}.db`)
+      core.db.exec(`VACUUM INTO '${file.replace(/'/g, "''")}'`)
+      const n = repo.resetPurchases(scope)
+      return { ok: true, path: file, message: `${n}개 항목의 ${scope === 'all' ? '구매가·구매일' : '가져온 구매가'}을 지웠습니다. 지우기 전 데이터는 데이터 폴더의 backups에 보관했습니다.` }
+    },
 
     backup: async (): Promise<BackupResult> => {
       const win = hooks.getWindow()

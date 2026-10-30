@@ -42,6 +42,7 @@ const methodMap: Record<ApiMethod, true> = {
   importLicenses: true,
   assignImported: true,
   getPurchases: true,
+  resetPurchases: true,
   backup: true,
   restore: true,
   exportCsv: true,

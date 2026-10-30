@@ -10,6 +10,7 @@ import { Dashboard } from './pages/Dashboard'
 import { Deals } from './pages/Deals'
 import { Library } from './pages/Library'
 import { Money } from './pages/Money'
+import { Purchases } from './pages/Purchases'
 import { Recommend } from './pages/Recommend'
 import { Search } from './pages/Search'
 import { Settings } from './pages/Settings'
@@ -32,6 +33,7 @@ function Main() {
         {page === 'library' && <Library />}
         {page === 'backlog' && <Backlog />}
         {page === 'money' && <Money />}
+        {page === 'purchases' && <Purchases />}
         {page === 'deals' && <Deals />}
         {page === 'search' && <Search />}
         {page === 'recommend' && <Recommend />}

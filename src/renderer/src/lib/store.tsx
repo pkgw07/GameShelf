@@ -8,6 +8,7 @@ export type Page =
   | 'library'
   | 'backlog'
   | 'money'
+  | 'purchases'
   | 'deals'
   | 'search'
   | 'recommend'

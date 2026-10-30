@@ -616,6 +616,29 @@ export class Repo {
     return true
   }
 
+  /**
+   * 지출 기록 초기화.
+   *  imported: 구매 내역에서 가져온 값만 / all: 직접 입력한 값까지 모두 (+ 가져온 구매 내역, 라이선스 획득일)
+   */
+  resetPurchases(scope: 'imported' | 'all'): number {
+    return this.db.tx(() => {
+      const now = Date.now()
+      const where = scope === 'imported' ? `purchase_source = 'history'` : `purchase_price IS NOT NULL OR purchase_date IS NOT NULL OR acquired_date IS NOT NULL`
+      const n = Number(this.db.prepare(`SELECT COUNT(*) AS n FROM user_data WHERE ${where}`).get<Row>()?.n ?? 0)
+      if (scope === 'imported') {
+        this.db
+          .prepare(`UPDATE user_data SET purchase_price = NULL, purchase_date = NULL, purchase_source = NULL, updated_at = ? WHERE purchase_source = 'history'`)
+          .run(now)
+      } else {
+        this.db
+          .prepare(`UPDATE user_data SET purchase_price = NULL, purchase_date = NULL, purchase_source = NULL, acquired_date = NULL, updated_at = ?`)
+          .run(now)
+      }
+      this.db.prepare('DELETE FROM purchases').run()
+      return n
+    })
+  }
+
   setAcquiredDate(key: string, date: string): void {
     const { platform, gameId } = parseKey(key)
     this.ensureUserData(platform, gameId)
