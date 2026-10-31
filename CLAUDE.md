@@ -11,11 +11,16 @@ Steam·PlayStation·Xbox·Nintendo 게임 라이브러리를 분석하는 Window
 
 바꾼 뒤에는 typecheck와 test를 둘 다 통과시킨다. main/shared 로직을 바꾸면 `tests/core.test.ts`에 검증을 추가한다.
 
+### 클라우드 세션(claude.ai/code, 리눅스)에서
+
+- 설치 파일은 Windows CI가 만든다. 클라우드에서는 `npm install --ignore-scripts` 로 받은 뒤(Electron 본체·네이티브 모듈 빌드 생략) `npm run typecheck` 와 `npm test` 로 확인한다. 테스트는 node:sqlite 를 쓰므로 Node 22 이상이면 된다
+- 화면은 실제로 띄워 볼 수 없으니, 렌더러를 고칠 때는 타입 검사에 더해 좁은 폭에서 넘치지 않게 클래스(`min-w-0`, `truncate`, `flex-wrap`, `minmax(0,1fr)`)를 신경 쓴다
+
 ## 배포 (자동 업데이트)
 
 1. `package.json`의 `version`과 `src/shared/types.ts`의 `APP_VERSION`을 같이 올린다 (1.0부터 시작, 기능 추가는 마이너, 수정은 패치)
 2. `CHANGELOG.md` 맨 위에 사용자에게 보이는 말로 변경 내용을 적는다. 기능이 바뀌면 `README.md` 기능 표도 고친다
-3. 커밋 메시지에 `[release]`를 넣어 `main`에 푸시 → GitHub Actions(`.github/workflows/build.yml`, windows-latest)가 설치 파일·blockmap·latest.yml 을 `v버전` Release 에 올린다. 설치된 앱은 electron-updater 로 이것을 받아 업데이트한다
+3. 커밋 메시지에 `[release]`를 넣어 `main`에 푸시 (사용자는 PR 검토 없이 바로 배포하는 방식을 써 왔다. 브랜치·PR로 작업했다면 병합 후 GitHub Actions 화면에서 Build 워크플로를 `release` 를 켜고 실행해도 된다) → GitHub Actions(`.github/workflows/build.yml`, windows-latest)가 설치 파일·blockmap·latest.yml 을 `v버전` Release 에 올린다. 설치된 앱은 electron-updater 로 이것을 받아 업데이트한다
 4. Actions 실행 결과(성공, Release 파일 3개)를 확인한다. 실패하면 check-run annotations 에 원인이 남는다
 
 ## 구조
