@@ -1,6 +1,6 @@
 import type { Db } from './driver'
 
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 // 플랫폼 공통 데이터: games, user_data, playtime_snapshots, play_sessions, hltb
 // Steam 전용 데이터: steam_* (appid 기준)
@@ -231,6 +231,8 @@ export function migrate(db: Db): void {
   db.exec(SQL)
   db.exec(SQL_V2)
   db.exec(SQL_V4)
+  // 1.6: 다른 플랫폼 게임의 장르 (PlayStation 이 주는 장르를 Steam 장르로 바꿔 저장)
+  if (!hasColumn(db, 'ext_game', 'genres')) db.exec(`ALTER TABLE ext_game ADD COLUMN genres TEXT`)
   if (!hasColumn(db, 'steam_app', 'dlc')) db.exec(`ALTER TABLE steam_app ADD COLUMN dlc TEXT NOT NULL DEFAULT '[]'`)
   if (!hasColumn(db, 'steam_app', 'parent_appid')) db.exec(`ALTER TABLE steam_app ADD COLUMN parent_appid INTEGER`)
   // 1.1.1: DLC 목록을 받은 시각. 1.0에서 받은 게임 정보에는 DLC 목록이 없어서 다시 받아야 한다

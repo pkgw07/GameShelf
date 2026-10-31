@@ -7,7 +7,7 @@ import { APP_VERSION, type BackupResult, type PlatformStatus, type Settings } fr
 import type { Core } from './core'
 import type { Updater } from './updater'
 import type { SteamStore } from './services/steamstore'
-import { psnLogin } from './services/psnlogin'
+import { nintendoLogin, psnLogin } from './services/psnlogin'
 import { xblAccount } from './providers/xbox'
 import { getPlayerSummary, resolveSteamId, storeSearch, toProfile } from './providers/steam'
 import { applyPurchases, importLicenses, importPurchases } from './services/imports'
@@ -26,7 +26,7 @@ export interface IpcHooks {
 
 /** 렌더러에 보낼 설정: 다른 플랫폼 토큰은 연결 여부만 알 수 있게 가린다 */
 function publicSettings(s: Settings): Settings {
-  return { ...s, psnRefreshToken: s.psnRefreshToken ? '•' : '', xblApiKey: s.xblApiKey ? '•' : '' }
+  return { ...s, psnRefreshToken: s.psnRefreshToken ? '•' : '', xblApiKey: s.xblApiKey ? '•' : '', nintendoSessionToken: s.nintendoSessionToken ? '•' : '' }
 }
 
 function isSqliteFile(path: string): boolean {
@@ -54,7 +54,8 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
     const s = settings.get()
     return {
       psn: { connected: Boolean(s.psnRefreshToken), account: s.psnAccount || null },
-      xbox: { connected: Boolean(s.xblApiKey), account: s.xblAccount || null }
+      xbox: { connected: Boolean(s.xblApiKey), account: s.xblAccount || null },
+      nintendo: { connected: Boolean(s.nintendoSessionToken), account: s.nintendoAccount || null }
     }
   }
 
@@ -64,7 +65,7 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
     saveSettings: (patch) => {
       const prev = settings.get()
       // 다른 플랫폼 토큰은 전용 메서드로만 바꾼다
-      const { psnRefreshToken: _p, xblApiKey: _x, ...safe } = patch
+      const { psnRefreshToken: _p, xblApiKey: _x, nintendoSessionToken: _n, ...safe } = patch
       const next = settings.save(safe)
       if (patch.steamId !== undefined && patch.steamId !== prev.steamId) cachedProfile = null
       hooks.onSettingsChanged(prev, next)
@@ -87,6 +88,16 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       if (!k) throw new Error('API 키를 넣어 주세요.')
       const account = await xblAccount(k)
       settings.save({ xblApiKey: k, xblAccount: account })
+      return platformStatus()
+    },
+    nintendoLogin: async () => {
+      const r = await nintendoLogin(hooks.getWindow())
+      if (r) settings.save({ nintendoSessionToken: r.sessionToken, nintendoAccount: r.nickname ?? 'Nintendo' })
+      return platformStatus()
+    },
+    nintendoLogout: () => {
+      settings.save({ nintendoSessionToken: '', nintendoAccount: '' })
+      repo.removePlatformGames('switch')
       return platformStatus()
     },
     xblDisconnect: () => {
@@ -195,7 +206,7 @@ export function registerIpc(core: Core, updater: Updater, hooks: IpcHooks): void
       const prev = settings.get()
       await hooks.store.logout()
       if (scope === 'accounts') {
-        const next = settings.save({ steamApiKey: '', steamId: '', itadApiKey: '', psnRefreshToken: '', psnAccount: '', xblApiKey: '', xblAccount: '' })
+        const next = settings.save({ steamApiKey: '', steamId: '', itadApiKey: '', psnRefreshToken: '', psnAccount: '', xblApiKey: '', xblAccount: '', nintendoSessionToken: '', nintendoAccount: '' })
         cachedProfile = null
         hooks.onSettingsChanged(prev, next)
         return { ok: true, path: null, message: 'API 키, Steam 계정 연결, Steam 로그인을 지웠습니다. 게임·가격·구매 기록은 그대로 있습니다.' }

@@ -1,7 +1,7 @@
 {
   "name": "gameshelf",
   "productName": "GameShelf",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "스팀 게임 라이브러리 분석 프로그램 (가격, 플레이타임, 도전과제, 추천)",
   "main": "./out/main/index.js",
   "author": "pkgw07",
@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.node.json --composite false && tsc --noEmit -p tsconfig.web.json --composite false",
     "build:win": "electron-vite build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "test": "tsx --tsconfig tests/tsconfig.json tests/core.test.ts"
   },
   "dependencies": {
     "electron-updater": "^6.6.0",
@@ -44,6 +45,7 @@
     "react-icons": "^5.5.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "tsx": "^4.19.2"
   }
 }

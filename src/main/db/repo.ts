@@ -20,7 +20,7 @@ import type {
   UserDataPatch,
   WishlistRow
 } from '@shared/types'
-import { effectiveLow } from '@shared/analytics'
+import { effectiveLow, titleKey } from '@shared/analytics'
 
 export const keyOf = (platform: Platform, gameId: string | number): string => `${platform}:${gameId}`
 
@@ -54,6 +54,7 @@ export interface ExtGameInput {
   scoreTotal?: number | null
   trophies?: TrophyCounts | null
   playtimeKnown?: boolean
+  genres?: GenreRef[]
 }
 
 export interface SteamAppInput {
@@ -145,8 +146,8 @@ export class Repo {
   saveExt(platform: Platform, gameId: string, e: ExtGameInput, manual: boolean, now = Date.now()): void {
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO ext_game(platform, game_id, image, device, ach_done, ach_total, score_done, score_total, trophies, playtime_known, manual, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO ext_game(platform, game_id, image, device, ach_done, ach_total, score_done, score_total, trophies, playtime_known, manual, updated_at, genres)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         platform,
@@ -160,7 +161,8 @@ export class Repo {
         e.trophies ? JSON.stringify(e.trophies) : null,
         e.playtimeKnown === false ? 0 : 1,
         manual ? 1 : 0,
-        now
+        now,
+        e.genres?.length ? JSON.stringify(e.genres) : null
       )
   }
 
@@ -224,6 +226,56 @@ export class Repo {
         n++
       }
     })
+    return n
+  }
+
+  /**
+   * 직접 추가해 둔 게임이 연결한 플랫폼 목록에도 들어오면, 입력해 둔 값(구매가·상태·메모 등)을
+   * 받아 온 게임으로 옮기고 직접 추가한 쪽은 지운다. 옮긴 개수를 돌려준다.
+   */
+  mergeManualDuplicates(platform: Platform): number {
+    const rows = this.db
+      .prepare(`SELECT g.game_id, g.name, COALESCE(e.manual, 0) AS manual FROM games g LEFT JOIN ext_game e ON e.platform = g.platform AND e.game_id = g.game_id WHERE g.platform = ? AND g.owned = 1`)
+      .all<Row>(platform)
+    const synced = new Map<string, string>()
+    for (const r of rows) if (!Number(r.manual)) synced.set(titleKey(String(r.name)), String(r.game_id))
+    let n = 0
+    for (const m of rows.filter((r) => Number(r.manual))) {
+      const target = synced.get(titleKey(String(m.name)))
+      if (!target) continue
+      const from = this.db.prepare('SELECT * FROM user_data WHERE platform = ? AND game_id = ?').get<Row>(platform, String(m.game_id))
+      if (from) {
+        this.ensureUserData(platform, target)
+        this.db
+          .prepare(
+            `UPDATE user_data SET
+               purchase_price = COALESCE(purchase_price, ?), purchase_date = COALESCE(purchase_date, ?),
+               purchase_source = COALESCE(purchase_source, ?), acquired_date = COALESCE(acquired_date, ?),
+               notes = CASE WHEN notes = '' THEN ? ELSE notes END, rating = COALESCE(rating, ?),
+               status = CASE WHEN status = 'none' THEN ? ELSE status END,
+               status_auto = CASE WHEN status = 'none' THEN ? ELSE status_auto END,
+               excluded = MAX(excluded, ?), hltb_main_manual = COALESCE(hltb_main_manual, ?), updated_at = ?
+             WHERE platform = ? AND game_id = ?`
+          )
+          .run(
+            from.purchase_price ?? null,
+            from.purchase_date ?? null,
+            from.purchase_source ?? null,
+            from.acquired_date ?? null,
+            String(from.notes ?? ''),
+            from.rating ?? null,
+            String(from.status ?? 'none'),
+            Number(from.status_auto ?? 0),
+            Number(from.excluded ?? 0),
+            from.hltb_main_manual ?? null,
+            Date.now(),
+            platform,
+            target
+          )
+      }
+      this.deleteManualGame(keyOf(platform, String(m.game_id)))
+      n++
+    }
     return n
   }
 
@@ -562,7 +614,7 @@ export class Repo {
   }
 
   /** 이름만 필요할 때 쓰는 가벼운 목록 */
-  listGamesLite(): { key: string; appid: number | null; name: string }[] {
+  listGamesLite(): { key: string; appid: number | null; name: string; platform: Platform; gameId: string }[] {
     return this.db
       .prepare(
         `SELECT g.platform, g.game_id, g.name, a.name_ko FROM games g
@@ -572,7 +624,9 @@ export class Repo {
       .map((r) => ({
         key: keyOf(r.platform as Platform, String(r.game_id)),
         appid: r.platform === 'steam' ? Number(r.game_id) : null,
-        name: String(r.name_ko || r.name)
+        name: String(r.name_ko || r.name),
+        platform: r.platform as Platform,
+        gameId: String(r.game_id)
       }))
   }
 
@@ -1042,7 +1096,7 @@ export class Repo {
         playtime2wMin: Number(g.playtime_2w_min),
         lastPlayed: num(g.last_played) || null,
         headerImage: str(app?.header_image) || (appid != null ? steamHeader(appid) : str(ext?.image) ?? ''),
-        genres: app ? (JSON.parse(String(app.genres)) as GenreRef[]) : [],
+        genres: app ? (JSON.parse(String(app.genres)) as GenreRef[]) : ext?.genres ? (JSON.parse(String(ext.genres)) as GenreRef[]) : [],
         isFree: Boolean(app?.is_free),
         detailsStatus: (app?.status as GameRow['detailsStatus']) ?? 'pending',
         ...pr,

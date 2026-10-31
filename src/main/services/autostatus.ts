@@ -7,6 +7,8 @@ const RECENT_SEC = 14 * 86_400
 
 export function suggestStatus(g: GameRow, nowSec = Math.floor(Date.now() / 1000)): GameStatus | null {
   if (g.achTotal && g.achTotal > 0 && g.achDone === g.achTotal) return 'completed'
+  // PlayStation 플래티넘 트로피 = 100% (DLC 트로피가 남아 있어도)
+  if (g.trophies?.platinum) return 'completed'
   if (g.status === 'completed' || g.status === 'cleared') return null
   const recent = g.playtime2wMin > 0 || (g.lastPlayed != null && nowSec - g.lastPlayed < RECENT_SEC)
   if (recent && (g.playtimeMin > 0 || g.playtimeKnown === false)) return 'playing'

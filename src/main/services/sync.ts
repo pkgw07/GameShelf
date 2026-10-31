@@ -134,6 +134,8 @@ export class SyncService {
         try {
           const list = await p.fetchOwnedGames({ settings: s, signal, saveSettings: (patch) => this.saveSettings?.(patch) })
           this.repo.upsertOwnedGames(p.platform, list)
+          // 직접 추가해 둔 같은 게임은 받아 온 쪽으로 합친다
+          this.repo.mergeManualDuplicates(p.platform)
         } catch (e) {
           warn(p.displayName, e)
         }

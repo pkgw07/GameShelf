@@ -1,6 +1,6 @@
 // 메인 프로세스와 화면(렌더러)이 함께 쓰는 타입 정의
 
-export const APP_VERSION = '1.5.0'
+export const APP_VERSION = '1.6.0'
 
 /** 지원 플랫폼. 1.0은 steam만 동작하고 나머지는 확장 대비용 */
 export type Platform = 'steam' | 'psn' | 'xbox' | 'switch' | 'manual'
@@ -151,6 +151,7 @@ export interface ManualGameInput {
 export interface PlatformStatus {
   psn: { connected: boolean; account: string | null }
   xbox: { connected: boolean; account: string | null }
+  nintendo: { connected: boolean; account: string | null }
 }
 
 /** DLC 보유 표시의 출처: 직접 / 라이선스 가져오기 / 구매 내역 / Steam 로그인 보유 목록 / 설치 폴더 */
@@ -236,6 +237,11 @@ export interface Settings {
   /** Xbox: OpenXBL(xbl.io) API 키 (암호화 저장) */
   xblApiKey: string
   xblAccount: string
+  /** Nintendo: 로그인 세션 토큰 (약 2년, 암호화 저장) */
+  nintendoSessionToken: string
+  nintendoAccount: string
+  /** 자동 백업 (주 1회, 최근 8개 보관) */
+  autoBackup: boolean
 }
 
 /** 설정에서 고를 수 있는 글자 크기 (화면 확대 비율) */
@@ -263,7 +269,10 @@ export const DEFAULT_SETTINGS: Settings = {
   psnRefreshToken: '',
   psnAccount: '',
   xblApiKey: '',
-  xblAccount: ''
+  xblAccount: '',
+  nintendoSessionToken: '',
+  nintendoAccount: '',
+  autoBackup: true
 }
 
 export interface ProfileInfo {
@@ -287,9 +296,13 @@ export interface SyncState {
 
 export interface NowPlaying {
   key: string
-  appid: number
+  /** Steam 게임이면 appid, 콘솔이면 null */
+  appid: number | null
   name: string
   since: number
+  platform: Platform
+  /** PS5, Xbox Series 등 */
+  device: string | null
 }
 
 export interface PricePoint {
@@ -367,10 +380,26 @@ export interface GenreWeight {
   weight: number
   hours: number
   count: number
+  /** 이 장르 점수에 크게 기여한 내 게임 (기여도 순, 최대 8개) */
+  top: { key: string; name: string; hours: number; platform: Platform }[]
+}
+
+/** 추천 점수가 어떻게 나왔는지 */
+export interface RecoReason {
+  /** 이 게임의 장르와 내 취향 점수 (0~1). 취향에 없는 장르는 0 */
+  genres: { id: string; name: string; weight: number }[]
+  /** 취향 일치 점수 (장르 가중치 합 / √장르 수) */
+  match: number
+  /** 평가 점수 (긍정 비율 × 리뷰 수 신뢰도). 보유 게임은 null */
+  quality: number | null
+  /** 같은 장르를 많이 플레이한 내 게임 */
+  because: { key: string; name: string; hours: number; platform: Platform; shared: string[] }[]
 }
 
 export interface Recommendation {
   appid: number
+  /** 보유 게임이면 라이브러리 키 */
+  key?: string
   name: string
   score: number
   matched: string[]
@@ -380,6 +409,7 @@ export interface Recommendation {
   priceKr: PriceInfo | null
   playtimeMin?: number
   inWishlist?: boolean
+  reason?: RecoReason
 }
 
 export interface RecommendationResult {

@@ -49,6 +49,8 @@ const methodMap: Record<ApiMethod, true> = {
   psnLogout: true,
   xblConnect: true,
   xblDisconnect: true,
+  nintendoLogin: true,
+  nintendoLogout: true,
   addManualGame: true,
   updateManualGame: true,
   deleteManualGame: true,

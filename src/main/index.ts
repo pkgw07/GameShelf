@@ -1,6 +1,6 @@
 import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { app, BrowserWindow, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, shell, Tray } from 'electron'
 import { IPC } from '@shared/api'
 import type { NowPlaying, Settings } from '@shared/types'
@@ -8,6 +8,7 @@ import icon from '../../resources/icon.png?asset'
 import trayIcon from '../../resources/tray.png?asset'
 import { Core } from './core'
 import { registerIpc } from './ipc'
+import { autoBackupIfDue } from './services/backup'
 import { SteamStore } from './services/steamstore'
 import { plainCodec, type SecretCodec } from './settings'
 import { Updater } from './updater'
@@ -129,7 +130,7 @@ function showWindow(): void {
 function updateTray(): void {
   if (!tray) return
   const s = core?.sync.getState()
-  const playing = nowPlaying ? `플레이 중: ${nowPlaying.name}` : '플레이 중인 게임 없음'
+  const playing = nowPlaying ? `플레이 중: ${nowPlaying.name}${nowPlaying.device ? ` (${nowPlaying.device})` : ''}` : '플레이 중인 게임 없음'
   tray.setToolTip(nowPlaying ? `GameShelf · ${nowPlaying.name} 플레이 중` : 'GameShelf')
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -193,6 +194,13 @@ function scheduleDaily(): void {
   const check = () => {
     if (!core) return
     const s = settings()
+    if (s.autoBackup && !core.sync.getState().running) {
+      try {
+        autoBackupIfDue(core.db, core.repo, join(dirname(core.dbPath), 'backups'))
+      } catch {
+        // 디스크 문제 등: 다음 확인 때 다시 시도
+      }
+    }
     if (!s.steamApiKey || !s.steamId) return
     if (!core.sync.dailyDoneToday() && !core.sync.getState().running) void core.sync.run('daily')
   }

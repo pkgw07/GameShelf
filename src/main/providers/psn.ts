@@ -3,9 +3,11 @@
 //  - 플레이한 게임과 플레이타임: gamelist/v2 (PS4·PS5)
 //  - 트로피: trophy/v1 trophyTitles (PS3·Vita 포함)
 import { titleKey } from '@shared/analytics'
-import type { Settings, TrophyCounts } from '@shared/types'
+import { genreName } from '@shared/genres'
+import type { GenreRef, Settings, TrophyCounts } from '@shared/types'
 import type { OwnedGameInput } from '../db/repo'
 import { HttpError, rawFetch, RateLimiter, request } from '../util/http'
+import type { ConsolePlaying } from '../services/nowplaying'
 import type { PlatformProvider, ProviderContext } from './types'
 
 const AUTH = 'https://ca.account.sony.com/api/authz/v3/oauth'
@@ -84,8 +86,40 @@ export function isoDurationMinutes(s: string | null | undefined): number {
   return Number(d ?? 0) * 1440 + Number(h ?? 0) * 60 + Number(min ?? 0) + Math.floor(Number(sec ?? 0) / 60)
 }
 
+/** PlayStation 장르 → Steam 장르 (취향 분석이 Steam 장르 기준이라 맞춰 둔다) */
+const PSN_GENRE: Record<string, string> = {
+  ACTION: '1',
+  SHOOTER: '1',
+  FIGHTING: '1',
+  PLATFORMER: '1',
+  ARCADE: '1',
+  ADVENTURE: '25',
+  HORROR: '25',
+  ROLE_PLAYING_GAMES: '3',
+  STRATEGY: '2',
+  SIMULATION: '28',
+  SIMULATOR: '28',
+  SPORT: '18',
+  SPORTS: '18',
+  RACING: '9',
+  DRIVING_RACING: '9',
+  CASUAL: '4',
+  PUZZLE: '4',
+  FAMILY: '4',
+  PARTY: '4',
+  MUSIC_RHYTHM: '4',
+  QUIZ: '4',
+  MMO: '29'
+}
+
+export function psnGenres(list: string[] | undefined): GenreRef[] {
+  const ids = [...new Set((list ?? []).map((g) => PSN_GENRE[g.toUpperCase()]).filter(Boolean))]
+  return ids.map((id) => ({ id, name: genreName(id) }))
+}
+
 interface GameListTitle {
   titleId: string
+  concept?: { genres?: string[] }
   name: string
   localizedName?: string
   imageUrl?: string
@@ -158,7 +192,8 @@ export async function fetchPsnGames(accessToken: string, signal?: AbortSignal): 
         achDone: tr ? sum(tr.earnedTrophies) : null,
         achTotal: tr ? sum(tr.definedTrophies) : null,
         trophies: tr ? { platinum: 0, gold: 0, silver: 0, bronze: 0, ...tr.earnedTrophies } : null,
-        playtimeKnown: true
+        playtimeKnown: true,
+        genres: psnGenres(t.concept?.genres)
       }
     })
   }
@@ -185,14 +220,39 @@ export async function fetchPsnGames(accessToken: string, signal?: AbortSignal): 
   return [...out.values()]
 }
 
+// 접근 토큰은 1시간 유효. 50분 동안 다시 쓴다
+let cached: { refresh: string; access: string; until: number } | null = null
+
+export async function psnAccess(refreshToken: string, save?: (patch: Partial<Settings>) => void): Promise<string> {
+  if (cached && cached.refresh === refreshToken && Date.now() < cached.until) return cached.access
+  const t = await refreshTokens(refreshToken)
+  // 갱신 토큰이 바뀌면 저장해 둔다
+  if (t.refreshToken && t.refreshToken !== refreshToken) save?.({ psnRefreshToken: t.refreshToken })
+  cached = { refresh: t.refreshToken || refreshToken, access: t.accessToken, until: Date.now() + 50 * 60_000 }
+  return t.accessToken
+}
+
+/** 지금 PS5·PS4 에서 하는 게임 (온라인 상태). 안 하면 null */
+export async function psnPresence(accessToken: string): Promise<ConsolePlaying | null> {
+  const r = await request<{
+    basicPresence?: {
+      primaryPlatformInfo?: { onlineStatus?: string; platform?: string }
+      gameTitleInfoList?: { npTitleId?: string; titleName?: string; format?: string; launchPlatform?: string }[]
+    }
+  }>(`${API}/userProfile/v1/internal/users/me/basicPresences?type=primary`, { headers: auth(accessToken), limiter, retries: 1 })
+  const p = r?.basicPresence
+  const g = p?.gameTitleInfoList?.[0]
+  if (!g?.titleName || p?.primaryPlatformInfo?.onlineStatus === 'offline') return null
+  const dev = (g.launchPlatform || g.format || p?.primaryPlatformInfo?.platform || '').toUpperCase()
+  return { platform: 'psn', gameId: g.npTitleId ?? null, name: g.titleName, device: dev.includes('PS5') ? 'PS5' : dev.includes('PS4') ? 'PS4' : null }
+}
+
 export const psnProvider: PlatformProvider = {
   platform: 'psn',
   displayName: 'PlayStation',
   isConfigured: (s: Settings) => Boolean(s.psnRefreshToken),
   async fetchOwnedGames(ctx: ProviderContext) {
-    const t = await refreshTokens(ctx.settings.psnRefreshToken)
-    // 갱신 토큰이 바뀌면 저장해 둔다
-    if (t.refreshToken && t.refreshToken !== ctx.settings.psnRefreshToken) ctx.saveSettings?.({ psnRefreshToken: t.refreshToken })
-    return fetchPsnGames(t.accessToken, ctx.signal)
+    const access = await psnAccess(ctx.settings.psnRefreshToken, ctx.saveSettings)
+    return fetchPsnGames(access, ctx.signal)
   }
 }

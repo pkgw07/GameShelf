@@ -348,6 +348,14 @@ export function Settings() {
               데이터 폴더 열기
             </Button>
           </div>
+          <div className="mt-3">
+            <Switch
+              checked={settings.autoBackup}
+              onChange={(v) => void save({ autoBackup: v })}
+              label="자동 백업"
+              hint="일주일에 한 번 데이터 폴더의 backups에 자동으로 백업하고, 최근 8개만 남깁니다. 되돌릴 때는 백업에서 복원을 누르고 그 파일을 고르세요."
+            />
+          </div>
           <p className="mt-3 text-[12px] text-faint">
             백업에는 직접 입력한 구매가, 메모, 상태 태그, 가격·플레이 기록이 모두 들어 있습니다. 복원하면 현재 데이터는 데이터 폴더에 따로 한 번 더 남겨 둡니다.
           </p>
@@ -552,7 +560,7 @@ function PlatformsPanel() {
             )}
           </div>
           <p className="mt-1.5 text-[12px] text-faint">
-            PS4·PS5 플레이타임과 트로피(PS3·Vita 포함)를 가져옵니다. 열린 창에서 Sony 계정으로 로그인하면 자동으로 닫힙니다. 비밀번호는 Sony 페이지에만 입력되고, 프로그램은 로그인 유지용 토큰만 암호화해 저장합니다(약 2달마다 다시 로그인). PlayStation 앱과 같은 비공식 방식이라 Sony가 바꾸면 잠시 안 될 수 있습니다.
+            PS4·PS5 플레이타임과 트로피(PS3·Vita 포함), 장르를 가져오고, PS5에서 지금 하는 게임을 2분마다 확인합니다. 열린 창에서 Sony 계정으로 로그인하면 자동으로 닫힙니다. 비밀번호는 Sony 페이지에만 입력되고, 프로그램은 로그인 유지용 토큰만 암호화해 저장합니다(약 2달마다 다시 로그인). PlayStation 앱과 같은 비공식 방식이라 Sony가 바꾸면 잠시 안 될 수 있습니다.
           </p>
         </div>
         <div className="py-4">
@@ -589,18 +597,47 @@ function PlatformsPanel() {
             <button type="button" className="text-brand underline" onClick={ext('https://xbl.io/')}>
               xbl.io
             </button>
-            에서 Xbox 계정으로 로그인한 뒤 API 키를 만들어 넣으세요(무료). 플레이한 게임, 도전과제, 게이머스코어, 마지막 플레이 날짜를 가져옵니다. Xbox는 플레이타임을 공개하지 않아 시간은 비어 있습니다.
+            에서 Xbox 계정으로 로그인한 뒤 API 키를 만들어 넣으세요(무료). 플레이한 게임, 도전과제, 게이머스코어, 마지막 플레이 날짜를 가져오고, 지금 하는 게임을 2분마다 확인합니다. Xbox는 플레이타임을 공개하지 않아 시간은 비어 있습니다.
+          </p>
+        </div>
+        <div className="py-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="w-24 font-semibold text-ink">Nintendo</span>
+            {st.nintendo.connected ? (
+              <>
+                <Badge tone="brand">연결됨</Badge>
+                <span className="text-muted">{st.nintendo.account}</span>
+                <Button size="sm" variant="ghost" className="ml-auto" disabled={busy != null} onClick={() => void act('nintendo', window.api.nintendoLogout)}>
+                  연결 끊기
+                </Button>
+              </>
+            ) : (
+              <Button
+                size="sm"
+                className="ml-auto"
+                icon={busy === 'nintendo' ? <Spinner /> : <LuLogIn />}
+                disabled={busy != null}
+                onClick={() =>
+                  void act('nintendo', window.api.nintendoLogin, (r) => (r.nintendo.connected ? '닌텐도를 연결했습니다. 동기화를 시작합니다.' : null))
+                }
+              >
+                닌텐도 계정 로그인
+              </Button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[12px] text-faint">
+            Switch·Switch 2에서 한 번이라도 실행한 게임의 총 플레이 시간과 처음·마지막 플레이 날짜를 가져옵니다. 열린 창에서 로그인한 뒤 "이 사람을 선택"을 누르면 자동으로 닫힙니다. 비밀번호는 닌텐도 페이지에만 입력되고, 로그인은 약 2년 유지됩니다. 닌텐도 앱과 같은 비공식 방식이라 닌텐도가 바꾸면 잠시 안 될 수 있습니다. 닌텐도는 도전과제가 없습니다.
           </p>
         </div>
         <div className="pt-4">
           <div className="flex flex-wrap items-center gap-3">
-            <span className="w-24 font-semibold text-ink">Switch · 기타</span>
+            <span className="w-24 font-semibold text-ink">직접 추가</span>
             <Button size="sm" className="ml-auto" icon={<LuPlus />} onClick={() => setAdding(true)}>
               게임 직접 추가
             </Button>
           </div>
           <p className="mt-1.5 text-[12px] text-faint">
-            Nintendo는 게임 목록을 가져올 수 있는 공개 방법이 없어 직접 추가합니다. 디스크 게임이나 다른 런처(Epic 등) 게임도 같은 방법으로 넣을 수 있고, 라이브러리의 "게임 추가" 버튼으로도 됩니다.
+            한 번도 실행하지 않은 Switch 게임, 디스크 게임, 다른 런처(Epic 등) 게임을 넣을 수 있습니다. 라이브러리의 "게임 추가" 버튼으로도 됩니다. 나중에 같은 게임이 연결한 플랫폼에서 들어오면 입력한 구매가·상태·메모를 그쪽으로 옮기고 직접 추가한 것은 지웁니다.
           </p>
           {adding && <ManualGameDialog onClose={() => setAdding(false)} />}
         </div>

@@ -6,7 +6,8 @@
 - 1.5.0: 플랫폼 확장
   - PlayStation: 프로그램 안 로그인, PS4·PS5 플레이타임, 트로피(PS3·Vita 포함)
   - Xbox: OpenXBL API 키, 도전과제·게이머스코어·마지막 플레이 (Xbox는 플레이타임을 공개하지 않음)
-  - Nintendo Switch·기타: 직접 추가 (공개 API 없음)
+  - Nintendo Switch·기타: 직접 추가
+- 1.6.0: Nintendo 연동(로그인, Switch·Switch 2 플레이 시간), PS5·Xbox 지금 플레이 중, 추천 이유 보기, 자동 백업
   - 같은 게임을 여러 플랫폼에서 가진 경우 묶어서 보기
 
 새로 원하는 기능이 있으면 이 목록에 추가합니다.

@@ -119,6 +119,7 @@ export function TopBar({ title, actions }: { title: string; actions?: ReactNode 
         >
           <span className="pulse-dot h-2 w-2 rounded-full bg-good" />
           <span className="max-w-[220px] truncate font-medium text-ink">{nowPlaying.name}</span>
+          {nowPlaying.device && <span className="text-[12px] text-muted">{nowPlaying.device}</span>}
           <span className="num text-faint">{duration(now - nowPlaying.since)}</span>
         </button>
       )}

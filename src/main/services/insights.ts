@@ -1,5 +1,5 @@
 // 화면에 보여줄 분석 데이터: 게임 상세, 활동 기록, 추천, 가격 검색, 엔딩 시간
-import { effectiveLow, genreProfile, excludeReason, isUnplayed } from '@shared/analytics'
+import { becauseOf, effectiveLow, genreProfile, excludeReason, isUnplayed, titleKey } from '@shared/analytics'
 import { genreByEn, genreById, genreName } from '@shared/genres'
 import type {
   ActivityData,
@@ -9,6 +9,7 @@ import type {
   PricePoint,
   Recommendation,
   RecommendationResult,
+  RecoReason,
   Settings
 } from '@shared/types'
 import type { Repo } from '../db/repo'
@@ -142,10 +143,20 @@ export class Insights {
     }
 
     const owned = new Set(games.map((g) => g.appid).filter((x): x is number => x != null))
+    // 다른 플랫폼(PS·Xbox·Switch)에 이미 있는 게임도 빼기 위해 이름으로도 비교한다
+    const ownedNames = new Set(
+      games.flatMap((g) => [g.name, g.nameKo]).filter((n): n is string => Boolean(n)).map(titleKey).filter((k) => k.length >= 2)
+    )
     const wish = new Set(this.repo.wishlistAppids())
+    const reasonFor = (ids: string[], match: number, quality: number | null): RecoReason => ({
+      genres: ids.map((id) => ({ id, name: genreName(id), weight: weight.get(id) ?? 0 })).sort((a, b) => b.weight - a.weight),
+      match,
+      quality,
+      because: becauseOf(ids, profile)
+    })
     const scored: Recommendation[] = []
     for (const c of pool) {
-      if (owned.has(c.appid)) continue
+      if (owned.has(c.appid) || ownedNames.has(titleKey(c.name))) continue
       const ids = c.genres.map((en) => genreByEn(en)?.id).filter((x): x is string => Boolean(x))
       const matched = ids.filter((id) => (weight.get(id) ?? 0) > 0.15)
       if (!matched.length) continue
@@ -162,7 +173,8 @@ export class Insights {
         reviews,
         headerImage: steamHeader(c.appid),
         priceKr: null,
-        inWishlist: wish.has(c.appid)
+        inWishlist: wish.has(c.appid),
+        reason: reasonFor(ids, match, quality)
       })
     }
     scored.sort((a, b) => b.score - a.score)
@@ -186,12 +198,14 @@ export class Insights {
 
     // 이미 가진 게임 중 아직 안 한 게임에서 취향에 맞는 것
     const backlog: Recommendation[] = included
-      .filter((g) => isUnplayed(g, s.unplayedMinutes) && g.appid != null)
+      .filter((g) => isUnplayed(g, s.unplayedMinutes) && g.genres.length > 0)
       .map((g) => {
         const ids = g.genres.map((x) => x.id)
         const match = ids.length ? ids.reduce((acc, id) => acc + (weight.get(id) ?? 0), 0) / Math.sqrt(ids.length) : 0
         return {
-          appid: g.appid as number,
+          appid: g.appid ?? 0,
+          key: g.key,
+          reason: reasonFor(ids, match, null),
           name: g.nameKo || g.name,
           score: match,
           matched: ids.filter((id) => (weight.get(id) ?? 0) > 0.15).map((id) => genreName(id)),

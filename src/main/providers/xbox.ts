@@ -3,6 +3,7 @@
 import type { Settings } from '@shared/types'
 import type { OwnedGameInput } from '../db/repo'
 import { HttpError, RateLimiter, request } from '../util/http'
+import type { ConsolePlaying } from '../services/nowplaying'
 import type { PlatformProvider, ProviderContext } from './types'
 
 const API = 'https://xbl.io/api/v2'
@@ -74,6 +75,25 @@ export async function fetchXboxGames(key: string, signal?: AbortSignal): Promise
         }
       }
     })
+}
+
+const PRESENCE_DEVICE: Record<string, string> = { Scarlett: 'Xbox Series', XboxOne: 'Xbox One', Durango: 'Xbox One', WindowsOneCore: 'PC', Win32: 'PC' }
+
+/** 지금 Xbox 에서 하는 게임. 안 하면 null */
+export async function xboxPresence(key: string): Promise<ConsolePlaying | null> {
+  let r: { state?: string; devices?: { type?: string; titles?: { id?: string; name?: string; placement?: string; state?: string }[] }[] }[] | null
+  try {
+    r = await request(`${API}/presence`, { headers: headers(key), limiter, retries: 1 })
+  } catch (e) {
+    throw wrap(e)
+  }
+  const me = Array.isArray(r) ? r[0] : null
+  if (!me || me.state === 'Offline') return null
+  for (const d of me.devices ?? []) {
+    const t = (d.titles ?? []).find((x) => x.placement === 'Full' && x.state === 'Active' && x.name && !/^(Home|Online|홈)$/i.test(x.name))
+    if (t) return { platform: 'xbox', gameId: t.id ?? null, name: t.name as string, device: PRESENCE_DEVICE[d.type ?? ''] ?? null }
+  }
+  return null
 }
 
 export const xboxProvider: PlatformProvider = {

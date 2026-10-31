@@ -81,6 +81,8 @@ export interface GameShelfApi {
   psnLogout(): Promise<PlatformStatus>
   xblConnect(apiKey: string): Promise<PlatformStatus>
   xblDisconnect(): Promise<PlatformStatus>
+  nintendoLogin(): Promise<PlatformStatus>
+  nintendoLogout(): Promise<PlatformStatus>
   addManualGame(input: ManualGameInput): Promise<string>
   updateManualGame(key: string, patch: Partial<Omit<ManualGameInput, 'platform'>>): Promise<void>
   deleteManualGame(key: string): Promise<void>

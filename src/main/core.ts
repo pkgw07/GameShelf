@@ -5,6 +5,8 @@ import { Repo } from './db/repo'
 import { migrate } from './db/schema'
 import { Insights } from './services/insights'
 import { NowPlayingService } from './services/nowplaying'
+import { psnAccess, psnPresence } from './providers/psn'
+import { xboxPresence } from './providers/xbox'
 import { SyncService } from './services/sync'
 import { SettingsStore, type SecretCodec } from './settings'
 
@@ -37,6 +39,18 @@ export class Core {
     this.sync.saveSettings = (patch) => void this.settings.save(patch)
     this.insights = new Insights(this.repo, get)
     this.nowPlaying = new NowPlayingService(this.repo, get, events.nowPlaying, (appid) => void this.sync.quickRefresh(appid))
+    // 연결한 콘솔의 "지금 플레이 중" (연결 안 했으면 null)
+    this.nowPlaying.consoleSources = [
+      async () => {
+        const s = get()
+        if (!s.psnRefreshToken) return null
+        return psnPresence(await psnAccess(s.psnRefreshToken, (p) => void this.settings.save(p)))
+      },
+      async () => {
+        const s = get()
+        return s.xblApiKey ? xboxPresence(s.xblApiKey) : null
+      }
+    ]
   }
 
   close(): void {

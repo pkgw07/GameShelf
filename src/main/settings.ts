@@ -15,7 +15,7 @@ export const plainCodec: SecretCodec = {
   decrypt: (s) => s
 }
 
-const SECRET_KEYS: (keyof Settings)[] = ['steamApiKey', 'itadApiKey', 'psnRefreshToken', 'xblApiKey']
+const SECRET_KEYS: (keyof Settings)[] = ['steamApiKey', 'itadApiKey', 'psnRefreshToken', 'xblApiKey', 'nintendoSessionToken']
 
 export class SettingsStore {
   private cache: Settings | null = null

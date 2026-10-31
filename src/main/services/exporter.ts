@@ -1,5 +1,5 @@
 // CSV 내보내기 (엑셀에서 한글이 깨지지 않도록 BOM 포함)
-import { STATUS_LABELS, type GameRow, type Settings } from '@shared/types'
+import { PLATFORM_LABELS, STATUS_LABELS, type GameRow, type Settings } from '@shared/types'
 import { costPerHour, excludeReason, EXCLUDE_LABELS, hltbRemaining, isUnplayed } from '@shared/analytics'
 
 function cell(v: unknown): string {
@@ -10,7 +10,9 @@ function cell(v: unknown): string {
 
 export function libraryCsv(games: GameRow[], s: Settings): string {
   const header = [
-    'appid',
+    '플랫폼',
+    '기기',
+    'appid / 게임 ID',
     '이름',
     '한국어 이름',
     '플레이타임(시간)',
@@ -40,10 +42,12 @@ export function libraryCsv(games: GameRow[], s: Settings): string {
     const rem = hltbRemaining(g)
     lines.push(
       [
-        g.appid,
+        PLATFORM_LABELS[g.platform],
+        g.device ?? '',
+        g.appid ?? g.gameId,
         g.name,
         g.nameKo,
-        (g.playtimeMin / 60).toFixed(1),
+        g.playtimeKnown ? (g.playtimeMin / 60).toFixed(1) : '',
         isUnplayed(g, s.unplayedMinutes) ? 'O' : '',
         STATUS_LABELS[g.status],
         ex ? EXCLUDE_LABELS[ex] : '',
@@ -57,7 +61,7 @@ export function libraryCsv(games: GameRow[], s: Settings): string {
         g.purchasePrice,
         g.purchaseDate ?? g.acquiredDate,
         cph != null ? Math.round(cph) : '',
-        g.achTotal ? `${g.achDone}/${g.achTotal}` : '',
+        g.achTotal ? `${g.achDone}/${g.achTotal}${g.trophies?.platinum ? ' (플래티넘)' : ''}${g.gamerscore ? ` (${g.gamerscore.done}G)` : ''}` : '',
         g.hltb?.main,
         rem ? rem.remaining.toFixed(1) : '',
         g.rating,

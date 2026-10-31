@@ -1,5 +1,5 @@
 // 통계·돈 계산 (순수 함수). 화면과 테스트에서 함께 사용한다.
-import type { GameRow, GenreWeight, LowInfo, PriceInfo, PricePoint, Settings } from './types'
+import type { GameRow, GenreWeight, LowInfo, PriceInfo, PricePoint, RecoReason, Settings } from './types'
 import { WEAK_GENRES, genreName } from './genres'
 
 export const DAY_MS = 86_400_000
@@ -239,22 +239,53 @@ export function dealVerdict(price: PriceInfo | null, low: LowInfo | null, nearPc
 
 /** 플레이타임 가중 장르 취향. 로그 스케일로 한 게임의 독식을 막는다 */
 export function genreProfile(games: GameRow[], unplayedMinutes: number): GenreWeight[] {
-  const m = new Map<string, GenreWeight>()
+  const m = new Map<string, GenreWeight & { contrib: { key: string; name: string; hours: number; platform: GameRow['platform']; w: number }[] }>()
   for (const g of games) {
-    if (isUnplayed(g, unplayedMinutes)) continue
+    if (isUnplayed(g, unplayedMinutes) || g.playtimeKnown === false) continue
     const hours = g.playtimeMin / 60
     const w = Math.log1p(hours)
     for (const gr of g.genres) {
-      const cur = m.get(gr.id) ?? { id: gr.id, name: genreName(gr.id, gr.name), weight: 0, hours: 0, count: 0 }
+      const cur = m.get(gr.id) ?? { id: gr.id, name: genreName(gr.id, gr.name), weight: 0, hours: 0, count: 0, top: [], contrib: [] }
       cur.weight += WEAK_GENRES.has(gr.id) ? w * 0.4 : w
       cur.hours += hours
       cur.count++
+      cur.contrib.push({ key: g.key, name: g.nameKo || g.name, hours, platform: g.platform, w })
       m.set(gr.id, cur)
     }
   }
   const list = [...m.values()].sort((a, b) => b.weight - a.weight)
   const max = list[0]?.weight || 1
-  return list.map((x) => ({ ...x, weight: x.weight / max }))
+  return list.map(({ contrib, ...x }) => ({
+    ...x,
+    weight: x.weight / max,
+    top: contrib
+      .sort((a, b) => b.w - a.w)
+      .slice(0, 8)
+      .map(({ w: _w, ...c }) => c)
+  }))
+}
+
+/** 추천 게임과 장르가 겹치는 내 게임 중 많이 한 것 (겹치는 장르 수 × 로그 플레이타임 순) */
+export function becauseOf(
+  genreIds: string[],
+  profile: GenreWeight[],
+  limit = 4
+): RecoReason['because'] {
+  const want = new Set(genreIds)
+  const byKey = new Map<string, RecoReason['because'][number] & { s: number }>()
+  for (const p of profile) {
+    if (!want.has(p.id)) continue
+    for (const t of p.top) {
+      const cur = byKey.get(t.key) ?? { ...t, shared: [], s: 0 }
+      cur.shared.push(p.name)
+      cur.s = cur.shared.length * Math.log1p(t.hours)
+      byKey.set(t.key, cur)
+    }
+  }
+  return [...byKey.values()]
+    .sort((a, b) => b.s - a.s)
+    .slice(0, limit)
+    .map(({ s: _s, ...x }) => x)
 }
 
 /** 가격 이력을 계단형 그래프용으로 정리 (시간순, 중복 제거) */
